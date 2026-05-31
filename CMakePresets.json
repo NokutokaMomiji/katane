@@ -1,0 +1,136 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "debug-base",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release-base",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "mingw-debug",
+      "displayName": "MinGW Debug",
+      "inherits": "debug-base",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build/mingw/debug",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_MAKE_PROGRAM": "mingw32-make"
+      }
+    },
+    {
+      "name": "mingw-release",
+      "displayName": "MinGW Release",
+      "inherits": "release-base",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build/mingw/release",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_MAKE_PROGRAM": "mingw32-make"
+      }
+    },
+    {
+      "name": "msys-debug",
+      "displayName": "MSYS Debug",
+      "inherits": "debug-base",
+      "generator": "MSYS Makefiles",
+      "binaryDir": "${sourceDir}/build/msys/debug",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_MAKE_PROGRAM": "make"
+      }
+    },
+    {
+      "name": "msys-release",
+      "displayName": "MSYS Release",
+      "inherits": "release-base",
+      "generator": "MSYS Makefiles",
+      "binaryDir": "${sourceDir}/build/msys/release",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_MAKE_PROGRAM": "make"
+      }
+    },
+    {
+      "name": "msvc-debug",
+      "displayName": "MSVC Debug",
+      "inherits": "debug-base",
+      "binaryDir": "${sourceDir}/build/msvc/debug"
+    },
+    {
+      "name": "msvc-release",
+      "displayName": "MSVC Release",
+      "inherits": "release-base",
+      "binaryDir": "${sourceDir}/build/msvc/release"
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "inherits": "msys-debug"
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "inherits": "msys-release"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "mingw-debug",
+      "displayName": "Build MinGW Debug",
+      "configurePreset": "mingw-debug"
+    },
+    {
+      "name": "mingw-release",
+      "displayName": "Build MinGW Release",
+      "configurePreset": "mingw-release"
+    },
+    {
+      "name": "msvc-debug",
+      "displayName": "Build MSVC Debug",
+      "configurePreset": "msvc-debug"
+    },
+    {
+      "name": "msvc-release",
+      "displayName": "Build MSVC Release",
+      "configurePreset": "msvc-release"
+    },
+    {
+      "name": "msys-debug",
+      "displayName": "Build MSYS Debug",
+      "configurePreset": "msys-debug"
+    },
+    {
+      "name": "msys-release",
+      "displayName": "Build MSYS Release",
+      "configurePreset": "msys-release"
+    },
+    {
+      "name": "debug",
+      "displayName": "Build Debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "displayName": "Build Release",
+      "configurePreset": "release"
+    }
+  ]
+}

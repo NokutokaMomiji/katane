@@ -1,0 +1,24 @@
+#ifndef KATANE_CONFIG_H
+#define KATANE_CONFIG_H
+
+#define KATANE_EXTENSION ".ktn"
+#define KATANE_VERSION "0.1.0"
+#define LIBRARY_DIRECTORY "libs"
+#define LIBRARY_DIRECTORY_INDEX "main"
+#define PACKAGES_DIRECTORY "apps"
+#define LOCAL_PACKAGES_DIRECTORY ".katane"
+#define LOCAL_EXT_DIRECTORY "/bin"
+#define LOCAL_SRC_DIRECTORY "/libs"
+
+#define DEBUG_MODE 0
+
+#define MAX_USING_CASES 256
+#define MAX_FUNCTION_PARAMETERS 255
+#define FRAMES_MAX 1000
+#define ERRORS_MAX 256
+#define MAX_INTERPOLATION_NESTING 8
+#define MAX_EXCEPTION_HANDLERS 16
+
+#define NAN_BOXING
+
+#endif
