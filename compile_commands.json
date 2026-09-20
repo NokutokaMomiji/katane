@@ -1,0 +1,128 @@
+[
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Array.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Array.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Array.c",
+  "output": "CMakeFiles/katane.dir/src/Array.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Chunk.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Chunk.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Chunk.c",
+  "output": "CMakeFiles/katane.dir/src/Chunk.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Compiler.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Compiler.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Compiler.c",
+  "output": "CMakeFiles/katane.dir/src/Compiler.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Debug.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Debug.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Debug.c",
+  "output": "CMakeFiles/katane.dir/src/Debug.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Exceptions.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Exceptions.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Exceptions.c",
+  "output": "CMakeFiles/katane.dir/src/Exceptions.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/HashMap.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/HashMap.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/HashMap.c",
+  "output": "CMakeFiles/katane.dir/src/HashMap.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Main.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Main.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Main.c",
+  "output": "CMakeFiles/katane.dir/src/Main.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Map.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Map.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Map.c",
+  "output": "CMakeFiles/katane.dir/src/Map.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Memory.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Memory.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Memory.c",
+  "output": "CMakeFiles/katane.dir/src/Memory.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Native.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Native.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Native.c",
+  "output": "CMakeFiles/katane.dir/src/Native.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Object.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Object.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Object.c",
+  "output": "CMakeFiles/katane.dir/src/Object.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Platform.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Platform.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Platform.c",
+  "output": "CMakeFiles/katane.dir/src/Platform.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Primitives.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Primitives.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Primitives.c",
+  "output": "CMakeFiles/katane.dir/src/Primitives.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Scanner.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Scanner.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Scanner.c",
+  "output": "CMakeFiles/katane.dir/src/Scanner.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Table.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Table.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Table.c",
+  "output": "CMakeFiles/katane.dir/src/Table.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Tutorial.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Tutorial.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Tutorial.c",
+  "output": "CMakeFiles/katane.dir/src/Tutorial.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/TypeDescriptor.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/TypeDescriptor.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/TypeDescriptor.c",
+  "output": "CMakeFiles/katane.dir/src/TypeDescriptor.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Utf8.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Utf8.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Utf8.c",
+  "output": "CMakeFiles/katane.dir/src/Utf8.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Utilities.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Utilities.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Utilities.c",
+  "output": "CMakeFiles/katane.dir/src/Utilities.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Value.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Value.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Value.c",
+  "output": "CMakeFiles/katane.dir/src/Value.c.obj"
+},
+{
+  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
+  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/VM.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/VM.c\"",
+  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/VM.c",
+  "output": "CMakeFiles/katane.dir/src/VM.c.obj"
+}
+]

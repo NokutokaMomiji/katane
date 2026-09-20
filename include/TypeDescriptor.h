@@ -35,6 +35,8 @@ typedef struct {
     int capacity;
 } KTN_DescriptorTable;
 
+bool KTN_DescriptorsEqual(const KTN_ObjTypeDescriptor* first, const KTN_ObjTypeDescriptor* second);
+
 void KTN_DescriptorSetInit(KTN_DescriptorSet* set);
 void KTN_DescriptorSetFree(KTN_VM* vm, KTN_DescriptorSet* set);
 void KTN_DescriptorSetMark(KTN_VM* vm, KTN_DescriptorSet* set);

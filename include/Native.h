@@ -5,6 +5,7 @@
 #include "Memory.h"
 #include "Object.h"
 #include "Utilities.h"
+#include "VM.h"
 
 #define GET_NATIVE(name)        NativeFn##name
 #define GET_METHOD(name)        NativeMethod##name
@@ -96,7 +97,6 @@
 #define EXPECT_ARG_STRING(index)    EXPECT_ARG_TYPE(index, IS_STRING, "String")
 #define EXPECT_ARG_ARRAY(index)     EXPECT_ARG_TYPE(index, IS_ARRAY,  "Array")
 #define EXPECT_ARG_BOOL(index)      EXPECT_ARG_TYPE(index, IS_BOOL,   "Bool")
-#define EXPECT_ARG_ARRAY(index)     EXPECT_ARG_TYPE(index, IS_ARRAY,  "Array")
 #define EXPECT_ARG_MAP(index)       EXPECT_ARG_TYPE(index, IS_MAP,    "Map")
 #define EXPECT_ARG_KATA(index)      EXPECT_ARG_TYPE(index, IS_CLASS,  "Kata")
 

@@ -81,7 +81,7 @@ static void FunctionStringify(StringBuilder* sb, KTN_ObjShiki* function) {
     }
 
     char buffer[256];
-    snprintf(buffer, sizeof(buffer), "<function %s at %p>", function->name->chars, (void*)function);
+    snprintf(buffer, sizeof(buffer), "<function %s at 0x%p>", function->name->chars, (void*)function);
     SBAppendCStr(sb, buffer);
 }
 
@@ -98,78 +98,75 @@ static void StringRepr(StringBuilder* sb, KTN_ObjString* string) {
         uint32_t codepoint = chr.codepoint;
 
         switch (codepoint) {
-        case '"':
-        SBAppendCStr(sb, "\\\"");
-        i += chr.length;
-        continue;
-        case '\\':
-        SBAppendCStr(sb, "\\\\");
-        i += chr.length;
-        continue;
-        case '\n':
-        SBAppendCStr(sb, "\\n");
-        i += chr.length;
-        continue;
-        case '\r':
-        SBAppendCStr(sb, "\\r");
-        i += chr.length;
-        continue;
-        case '\t':
-        SBAppendCStr(sb, "\\t");
-        i += chr.length;
-        continue;
-        case '\a':
-        SBAppendCStr(sb, "\\a");
-        i += chr.length;
-        continue;
-        case '\b':
-        SBAppendCStr(sb, "\\b");
-        i += chr.length;
-        continue;
-        case '\f':
-        SBAppendCStr(sb, "\\f");
-        i += chr.length;
-        continue;
-        case '\v':
-        SBAppendCStr(sb, "\\v");
-        i += chr.length;
-        continue;
-        case '\0':
-        SBAppendCStr(sb, "\\0");
-        i += chr.length;
-        continue;
-        default:
-        break;
+            case '"':
+                SBAppendCStr(sb, "\\\"");
+                i += chr.length;
+                continue;
+            case '\\':
+                SBAppendCStr(sb, "\\\\");
+                i += chr.length;
+                continue;
+            case '\n':
+                SBAppendCStr(sb, "\\n");
+                i += chr.length;
+                continue;
+            case '\r':
+                SBAppendCStr(sb, "\\r");
+                i += chr.length;
+                continue;
+            case '\t':
+                SBAppendCStr(sb, "\\t");
+                i += chr.length;
+                continue;
+            case '\a':
+                SBAppendCStr(sb, "\\a");
+                i += chr.length;
+                continue;
+            case '\b':
+                SBAppendCStr(sb, "\\b");
+                i += chr.length;
+                continue;
+            case '\f':
+                SBAppendCStr(sb, "\\f");
+                i += chr.length;
+                continue;
+            case '\v':
+                SBAppendCStr(sb, "\\v");
+                i += chr.length;
+                continue;
+            case '\0':
+                SBAppendCStr(sb, "\\0");
+                i += chr.length;
+                continue;
+            default:
+                break;
         }
 
-        // Printable ASCII — emit as-is.
         if (codepoint >= 0x20 && codepoint < 0x7F) {
-        SBAppend(sb, string->chars + i, chr.length);
-        i += chr.length;
-        continue;
+            SBAppend(sb, string->chars + i, chr.length);
+            i += chr.length;
+            continue;
         }
 
         char buffer[12];
 
-        // Non-printable or Latin-1 — use \xNN.
         if (codepoint < 0x100) {
-        snprintf(buffer, sizeof(buffer), "\\x%02x", codepoint);
-        SBAppendCStr(sb, buffer);
-        i += chr.length;
-        continue;
+            snprintf(buffer, sizeof(buffer), "\\x%02x", codepoint);
+            SBAppendCStr(sb, buffer);
+            i += chr.length;
+            continue;
         }
 
-        // BMP Unicode — use \uNNNN.
         if (codepoint < 0x10000) {
-        snprintf(buffer, sizeof(buffer), "\\u%04x", codepoint);
-        SBAppendCStr(sb, buffer);
-        i += chr.length;
-        continue;
+            snprintf(buffer, sizeof(buffer), "\\u%04x", codepoint);
+            SBAppendCStr(sb, buffer);
+            i += chr.length;
+            continue;
         }
 
-        // Full Unicode — use \UNNNNNNNN.
         snprintf(buffer, sizeof(buffer), "\\U%08x", codepoint);
         SBAppendCStr(sb, buffer);
+
         i += chr.length;
     }
 
@@ -181,6 +178,7 @@ static void ArrayStringify(StringBuilder* sb, KTN_ObjArray* array, VisitedSet* v
         SBAppendCStr(sb, "[...]");
         return;
     }
+
     VisitedPush(visited, (KTN_Object*)array);
 
     SBAppendCStr(sb, "[");
@@ -188,14 +186,13 @@ static void ArrayStringify(StringBuilder* sb, KTN_ObjArray* array, VisitedSet* v
     for (int i = 0; i < array->items.count; i++) {
         KTN_Value value = array->items.values[i];
 
-        if (IS_STRING(value)) {
-        StringRepr(sb, AS_STRING(value));
-        } else {
-        ValueStringify(sb, value, visited);
-        }
+        if (IS_STRING(value))
+            StringRepr(sb, AS_STRING(value));
+        else
+            ValueStringify(sb, value, visited);
 
         if (i != array->items.count - 1)
-        SBAppendCStr(sb, ", ");
+            SBAppendCStr(sb, ", ");
     }
 
     SBAppendCStr(sb, "]");
@@ -208,6 +205,7 @@ static void MapStringify(StringBuilder* sb, KTN_ObjMap* map, VisitedSet* visited
         SBAppendCStr(sb, "{...}");
         return;
     }
+
     VisitedPush(visited, (KTN_Object*)map);
 
     SBAppendCStr(sb, "{");
@@ -219,21 +217,19 @@ static void MapStringify(StringBuilder* sb, KTN_ObjMap* map, VisitedSet* visited
     KTN_Value key, item;
 
     while (KTN_HashMapNextOrdered(hashMap, &cursor, &key, &item)) {
-        if (IS_STRING(key)) {
-        StringRepr(sb, AS_STRING(key));
-        } else {
-        ValueStringify(sb, key, visited);
-        }
+        if (IS_STRING(key))
+            StringRepr(sb, AS_STRING(key));
+        else
+            ValueStringify(sb, key, visited);
 
         SBAppendCStr(sb, ": ");
-        if (IS_STRING(item)) {
-        StringRepr(sb, AS_STRING(item));
-        } else {
-        ValueStringify(sb, item, visited);
-        }
+        if (IS_STRING(item))
+            StringRepr(sb, AS_STRING(item));
+        else
+            ValueStringify(sb, item, visited);
 
         if (i != hashMap->count - 1)
-        SBAppendCStr(sb, ", ");
+            SBAppendCStr(sb, ", ");
 
         i++;
     }
@@ -310,7 +306,7 @@ static void ObjectRepresentation(StringBuilder* sb, KTN_Value value, VisitedSet*
 
         case OBJ_INSTANCE: {
             char buffer[256];
-            snprintf(buffer, sizeof(buffer), "<%s instance at %p>",
+            snprintf(buffer, sizeof(buffer), "<%s instance at 0x%p>",
                     AS_INSTANCE(value)->kata->className->chars,
                     (void*)AS_INSTANCE(value));
             SBAppendCStr(sb, buffer);
@@ -417,7 +413,7 @@ static void ObjectStringify(StringBuilder* sb, KTN_Value value, VisitedSet* visi
 
         case OBJ_INSTANCE: {
             char buffer[256];
-            snprintf(buffer, sizeof(buffer), "<%s instance at %p>",
+            snprintf(buffer, sizeof(buffer), "<%s instance at 0x%p>",
                     AS_INSTANCE(value)->kata->className->chars,
                     (void*)AS_INSTANCE(value));
             SBAppendCStr(sb, buffer);
@@ -626,7 +622,7 @@ static KTN_Object* ObjectAllocate(KTN_VM* vm, size_t size, KTN_ObjectType object
     vm->objects = object;
 
 #ifdef DEBUG_LOG_GC
-    printf("> %p allocate %zu for %d\n", (void*)object, size, objectType);
+    printf("[GC]: 0x%p allocate %zu for %d\n", (void*)object, size, objectType);
 #endif
 
     return object;
@@ -652,7 +648,7 @@ KTN_ObjModule* ModuleNew(KTN_VM* vm, char* name, char* file, KTN_ObjModule* pare
 }
 
 KTN_ObjClosure* ClosureNew(KTN_VM* vm, KTN_ObjShiki* function) {
-    KTN_ObjUpvalue* *upvalues = ALLOCATE(KTN_ObjUpvalue* , function->upvalueCount);
+    KTN_ObjUpvalue** upvalues = ALLOCATE(KTN_ObjUpvalue*, function->upvalueCount);
 
     for (int i = 0; i < function->upvalueCount; i++) {
         upvalues[i] = NULL;
@@ -663,6 +659,7 @@ KTN_ObjClosure* ClosureNew(KTN_VM* vm, KTN_ObjShiki* function) {
     closure->owner = NULL;
     closure->upvalues = upvalues;
     closure->upvalueCount = function->upvalueCount;
+    
     return closure;
 }
 
@@ -715,47 +712,12 @@ KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString
             signature->parameters[i].type = parameters[i].type;
             signature->parameters[i].hasDefaultValue = parameters[i].hasDefaultValue;
             signature->parameters[i].isNamed = parameters[i].isNamed;
+            signature->parameters[i].defaultValue = parameters[i].defaultValue;
         }
     }
 
     Pop(vm);
     return signature;
-}
-
-bool KTN_SignatureEquals(const KTN_ObjSignature* first, const KTN_ObjSignature* second) {
-    if (first == second)
-        return true;
-
-    if (first == NULL || second == NULL)
-        return false;
-
-    if (first->shikiType != second->shikiType)
-        return false;
-
-    if (first->name != second->name)
-        return false;
-
-    if (first->returnType != second->returnType)
-        return false;
-
-    if (first->parameterCount != second->parameterCount)
-        return false;
-
-    for (int i = 0; i < first->parameterCount; i++) {
-        const KTN_SignatureParameter* left = &first->parameters[i];
-        const KTN_SignatureParameter* right = &second->parameters[i];
-
-        if (left->name != right->name)
-            return false;
-        if (left->type != right->type)
-            return false;
-        if (left->hasDefaultValue != right->hasDefaultValue)
-            return false;
-        if (left->isNamed != right->isNamed)
-            return false;
-    }
-
-    return true;
 }
 
 KTN_ObjTypeDescriptor* TypeDescriptorNew(KTN_VM* vm) {
@@ -963,12 +925,16 @@ KTN_ObjString* ObjectToString(KTN_VM* vm, KTN_Value value) {
 // Prints a value to stdout. Cycle-safe for arrays and maps.
 void ObjectPrint(KTN_Value value) {
     StringBuilder sb;
-    SBInit(&sb);
     VisitedSet visited;
+    
+    SBInit(&sb);
+    
     visited.count = 0;
     ValueStringify(&sb, value, &visited);
+
     if (sb.buffer)
         printf("%s", sb.buffer);
+    
     SBFree(&sb);
 }
 

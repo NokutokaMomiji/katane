@@ -354,7 +354,7 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
         case OP_ASSERT:
             return SimpleInstruction("OP_ASSERT", offset);
         case OP_INSTANCEOF:
-            return ConstantLongInstruction("OP_INSTANCEOF", chunk, offset);
+            return SimpleInstruction("OP_INSTANCEOF", offset);
         case OP_BUILD_STACK_TRACE:
             return SimpleInstruction("OP_BUILD_STACK_TRACE", offset);
         case OP_CHECK_PARAMS:

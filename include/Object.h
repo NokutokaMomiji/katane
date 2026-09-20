@@ -187,21 +187,37 @@ typedef struct {
     const char* docs;
 } KTN_ObjNative;
 
+typedef enum {
+    KTN_PARAM_POSITIONAL,
+    KTN_PARAM_VARIADIC,
+    KTN_PARAM_NAMED
+} KTN_ParameterKind;
+
+/// Compiler-safe version of a signature parameter. It later gets converted to a [KTN_SignatureParameter]
 typedef struct {
     const char* start;
     int length;
     KTN_ObjTypeDescriptor* type;
     bool hasDefaultValue;
     bool isNamed;
+    KTN_ParameterKind kind;
+    KTN_Value defaultValue;
+    bool defaultIsImmutable;
 } KTN_SignatureParameterSpec;
 
+/// Represents a shiki parameter, including its default data. It gets used for recreating the signature as well as
+/// enforcing parameter conditions.
 typedef struct {
     KTN_ObjString* name;
     KTN_ObjTypeDescriptor* type;
     bool hasDefaultValue;
     bool isNamed;
+    KTN_ParameterKind kind;
+    KTN_Value defaultValue;
+    bool defaultIsImmutable;
 } KTN_SignatureParameter;
 
+/// Represents the signature of a shiki. This is used for recreating the signature as well as for calling the function.
 typedef struct KTN_ObjSignature {
     KTN_Object object;
     KTN_ObjString* display;
@@ -349,7 +365,6 @@ KTN_ObjClosure* ClosureNew(KTN_VM* vm, KTN_ObjShiki* function);
 KTN_ObjShiki* ShikiNew(KTN_VM* vm, KTN_ObjModule* module, KTN_ShikiType type);
 KTN_ObjNative* NativeNew(KTN_VM* vm, NativeFnEx function, const char* name, const char* signature, const char* docs);
 KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString* name, KTN_ObjTypeDescriptor* returnType, const KTN_SignatureParameterSpec* parameters, int parameterCount, KTN_ShikiType shikiType);
-bool KTN_SignatureEquals(const KTN_ObjSignature* first, const KTN_ObjSignature* second);
 
 KTN_ObjArray* ArrayNew(KTN_VM* vm);
 KTN_ObjMap* MapNew(KTN_VM* vm);

@@ -57,15 +57,17 @@ char* StringAppend(char* oldString, const char* newString) {
 }
 
 char* StringAppendN(char* oldString, const char* newString, size_t newLength) {
-    if (newString == NULL)
+    if (newString == NULL) {
         return oldString;
+    }
 
-    size_t oldLength = strlen(oldString);
+    size_t oldLength = (oldString == NULL) ? 0 : strlen(oldString);
     size_t outputLength = oldLength + newLength;
     char* output = (char*)realloc((void*)oldString, outputLength + 1);
 
-    if (output == NULL)
+    if (output == NULL) {
         return oldString;
+    }
 
     memcpy(output + oldLength, newString, newLength);
     output[outputLength] = '\0';
@@ -178,6 +180,49 @@ void SBFree(StringBuilder* sb) {
     sb->capacity = 0;
 }
 
+static uint32_t HexNibbleValue(char character) {
+    if (character >= 'a') {
+        return (uint32_t)(character - 'a' + 10);
+    }
+
+    if (character >= 'A') {
+        return (uint32_t)(character - 'A' + 10);
+    }
+
+    return (uint32_t)(character - '0');
+}
+
+static bool ReadHexValue(const char* source, int sourceLength, int position, int digitCount, uint32_t* outValue) {
+    if (position + digitCount > sourceLength) {
+        return false;
+    }
+
+    uint32_t value = 0;
+
+    for (int digit = 0; digit < digitCount; digit++) {
+        if (!IsHexadecimal(source[position + digit])) {
+            return false;
+        }
+
+        value = (value << 4) | HexNibbleValue(source[position + digit]);
+    }
+
+    *outValue = value;
+    return true;
+}
+
+static bool IsValidCodepoint(uint32_t codepoint) {
+    if (codepoint > 0x10FFFF) {
+        return false;
+    }
+
+    if (codepoint >= 0xD800 && codepoint <= 0xDFFF) {
+        return false;
+    }
+
+    return true;
+}
+
 static int DecodeEscapeSequence(const char* source, int sourceLength, int index, StringBuilder* builder) {
     if (index + 1 >= sourceLength) {
         SBAppend(builder, source + index, 1);
@@ -187,17 +232,49 @@ static int DecodeEscapeSequence(const char* source, int sourceLength, int index,
     char escapeChar = source[index + 1];
 
     switch (escapeChar) {
-        case 'n':  SBAppendCStr(builder, "\n"); return 2;
-        case 't':  SBAppendCStr(builder, "\t"); return 2;
-        case 'r':  SBAppendCStr(builder, "\r"); return 2;
-        case 'a':  SBAppendCStr(builder, "\a"); return 2;
-        case 'b':  SBAppendCStr(builder, "\b"); return 2;
-        case 'f':  SBAppendCStr(builder, "\f"); return 2;
-        case 'v':  SBAppendCStr(builder, "\v"); return 2;
-        case '\\': SBAppendCStr(builder, "\\"); return 2;
-        case '\'': SBAppendCStr(builder, "\'"); return 2;
-        case '"':  SBAppendCStr(builder, "\""); return 2;
-        default:   break;
+        case 'n': {
+            SBAppendCStr(builder, "\n");
+            return 2;
+        }
+        case 't': {
+            SBAppendCStr(builder, "\t");
+            return 2;
+        }
+        case 'r': {
+            SBAppendCStr(builder, "\r");
+            return 2;
+        }
+        case 'a': {
+            SBAppendCStr(builder, "\a");
+            return 2;
+        }
+        case 'b': {
+            SBAppendCStr(builder, "\b");
+            return 2;
+        }
+        case 'f': {
+            SBAppendCStr(builder, "\f");
+            return 2;
+        }
+        case 'v': {
+            SBAppendCStr(builder, "\v");
+            return 2;
+        }
+        case '\\': {
+            SBAppendCStr(builder, "\\");
+            return 2;
+        }
+        case '\'': {
+            SBAppendCStr(builder, "\'");
+            return 2;
+        }
+        case '"': {
+            SBAppendCStr(builder, "\"");
+            return 2;
+        }
+        default: {
+            break;
+        }
     }
 
     if (escapeChar == 'x') {
@@ -206,13 +283,7 @@ static int DecodeEscapeSequence(const char* source, int sourceLength, int index,
         int digitCount = 0;
 
         while (position < sourceLength && digitCount < 2 && IsHexadecimal(source[position])) {
-            uint8_t nibble = (uint8_t)source[position];
-
-            nibble = (nibble >= 'a') ? nibble - 'a' + 10 :
-                     (nibble >= 'A') ? nibble - 'A' + 10 :
-                                       nibble - '0';
-
-            value = (value << 4) | nibble;
+            value = (value << 4) | HexNibbleValue(source[position]);
             position++;
             digitCount++;
         }
@@ -222,72 +293,66 @@ static int DecodeEscapeSequence(const char* source, int sourceLength, int index,
             return 2;
         }
 
-        char encoded[4];
-        int encodedLength = Utf8Encode(value, encoded);
-        SBAppend(builder, encoded, encodedLength);
+        char byteValue = (char)value;
+        SBAppend(builder, &byteValue, 1);
         return 2 + digitCount;
     }
 
     if (escapeChar == 'u') {
-        int position = index + 2;
+        uint32_t codepoint = 0;
 
-        if (position + 4 > sourceLength) {
+        if (!ReadHexValue(source, sourceLength, index + 2, 4, &codepoint)) {
             SBAppend(builder, source + index, 2);
             return 2;
         }
 
-        uint32_t codepoint = 0;
+        if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
+            uint32_t lowSurrogate = 0;
+            bool hasLowSurrogate = (index + 7 < sourceLength) &&
+                                   (source[index + 6] == '\\') &&
+                                   (source[index + 7] == 'u') &&
+                                   ReadHexValue(source, sourceLength, index + 8, 4, &lowSurrogate);
 
-        for (int digit = 0; digit < 4; digit++) {
-            if (!IsHexadecimal(source[position + digit])) {
-                SBAppend(builder, source + index, 2);
-                return 2;
+            if (hasLowSurrogate && lowSurrogate >= 0xDC00 && lowSurrogate <= 0xDFFF) {
+                uint32_t combined = 0x10000 + ((codepoint - 0xD800) << 10) + (lowSurrogate - 0xDC00);
+                char encoded[4];
+                int encodedLength = Utf8Encode(combined, encoded);
+                SBAppend(builder, encoded, encodedLength);
+                return 12;
             }
 
-            uint8_t nibble = (uint8_t)source[position + digit];
+            SBAppend(builder, source + index, 2);
+            return 2;
+        }
 
-            nibble = (nibble >= 'a') ? nibble - 'a' + 10 :
-                     (nibble >= 'A') ? nibble - 'A' + 10 :
-                                       nibble - '0';
-
-            codepoint = (codepoint << 4) | nibble;
+        if (!IsValidCodepoint(codepoint)) {
+            SBAppend(builder, source + index, 2);
+            return 2;
         }
 
         char encoded[4];
         int encodedLength = Utf8Encode(codepoint, encoded);
         SBAppend(builder, encoded, encodedLength);
-        return 6; // backslash + 'u' + 4 digits
+        return 6;
     }
 
     if (escapeChar == 'U') {
-        int position = index + 2;
+        uint32_t codepoint = 0;
 
-        if (position + 8 > sourceLength) {
+        if (!ReadHexValue(source, sourceLength, index + 2, 8, &codepoint)) {
             SBAppend(builder, source + index, 2);
             return 2;
         }
 
-        uint32_t codepoint = 0;
-
-        for (int digit = 0; digit < 8; digit++) {
-            if (!IsHexadecimal(source[position + digit])) {
-                SBAppend(builder, source + index, 2);
-                return 2;
-            }
-
-            uint8_t nibble = (uint8_t)source[position + digit];
-
-            nibble = (nibble >= 'a') ? nibble - 'a' + 10 :
-                     (nibble >= 'A') ? nibble - 'A' + 10 :
-                                       nibble - '0';
-
-            codepoint = (codepoint << 4) | nibble;
+        if (!IsValidCodepoint(codepoint)) {
+            SBAppend(builder, source + index, 2);
+            return 2;
         }
 
         char encoded[4];
         int encodedLength = Utf8Encode(codepoint, encoded);
         SBAppend(builder, encoded, encodedLength);
-        return 10; // backslash + 'U' + 8 digits
+        return 10;
     }
 
     if (IsOctal(escapeChar)) {
@@ -301,9 +366,8 @@ static int DecodeEscapeSequence(const char* source, int sourceLength, int index,
             digitCount++;
         }
 
-        char encoded[4];
-        int encodedLength = Utf8Encode(value, encoded);
-        SBAppend(builder, encoded, encodedLength);
+        char byteValue = (char)(value & 0xFF);
+        SBAppend(builder, &byteValue, 1);
         return 1 + digitCount;
     }
 
@@ -311,10 +375,11 @@ static int DecodeEscapeSequence(const char* source, int sourceLength, int index,
     return 2;
 }
 
-char* ProcessEscapes(const char* source, int sourceLength) {
+char* ProcessEscapes(const char* source, int sourceLength, int* outLength) {
     StringBuilder builder;
     SBInit(&builder);
     SBEnsure(&builder, sourceLength);
+    builder.buffer[0] = '\0';
 
     int index = 0;
 
@@ -326,6 +391,10 @@ char* ProcessEscapes(const char* source, int sourceLength) {
 
         SBAppend(&builder, source + index, 1);
         index++;
+    }
+
+    if (outLength != NULL) {
+        *outLength = builder.length;
     }
 
     return builder.buffer;

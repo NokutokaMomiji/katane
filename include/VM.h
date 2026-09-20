@@ -8,7 +8,7 @@
 #include "Table.h"
 #include "Config.h"
 
-#define STACK_MAX (FRAMES_MAX * UINT8_COUNT)
+#define STACK_MAX (MAX_FRAMES * UINT8_COUNT)
 
 typedef struct {
     KTN_ObjClosure* closure;
@@ -44,18 +44,19 @@ typedef struct {
     int targetScopeDepth;
 
     KTN_Value* stackHead;
+    int catchScopeDepth;
     KTN_Value value;
 } KTN_ErrorFrame;
 
 struct KTN_VM {
-    KTN_CallFrame frames[FRAMES_MAX];
+    KTN_CallFrame frames[MAX_FRAMES];
     KTN_CallFrame* currentFrame;
     int frameCount;
 
     KTN_Value stack[STACK_MAX];
     KTN_Value* stackTop;
 
-    KTN_ErrorFrame* errors[ERRORS_MAX];
+    KTN_ErrorFrame* errors[MAX_ERRORS];
     int errorCount;
 
     KTN_Table strings;
@@ -94,6 +95,8 @@ struct KTN_VM {
     KTN_ObjKata* typeBool;
     KTN_ObjKata* typeString;
     KTN_ObjKata* typeNull;
+    KTN_ObjKata* typeArray;
+    KTN_ObjKata* typeMap;
 
     /*
         KTN_ObjString* strToString;
@@ -151,12 +154,19 @@ void Push(KTN_VM* vm, KTN_Value value);
 KTN_Value Pop(KTN_VM* vm);
 KTN_Value PopN(KTN_VM* vm, int n);
 KTN_Value Peek(KTN_VM* vm, int distance);
+void KTN_ResetStack(KTN_VM* vm);
+void KTN_CloseUpvalues(KTN_VM* vm, KTN_Value* last);
 
 void ErrorPush(KTN_VM* vm, KTN_ErrorFrame* frame);
 KTN_ErrorFrame* ErrorPop(KTN_VM* vm);
 KTN_ErrorFrame* ErrorPeek(KTN_VM* vm);
 
-bool ThrowException(KTN_VM* vm, const char* type, bool isAssert, const char* format, ...);
+bool KTN_RuntimeError(KTN_VM* vm, const char* format, ...);
+bool KTN_ThrowException(KTN_VM* vm, const char* type, bool isAssert, const char* format, ...);
+bool KTN_ThrowTypeError(KTN_VM* vm, const char* expectedBuffer, const char* actualName, const char* context);
+bool KTN_ThrowValue(KTN_VM* vm, KTN_ObjInstance* exception, bool buildTrace);
+
+#define ThrowException KTN_ThrowException
 
 static inline void ModuleAdd(KTN_VM* vm, KTN_ObjModule* module, char* name) {
     bool isKnown = true;

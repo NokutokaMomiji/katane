@@ -4,7 +4,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <time.h>
-#include <stdlib.h> 
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
@@ -15,18 +15,15 @@
 #include "Memory.h"
 #include "Array.h"
 #include "Map.h"
-#include "VM.h"
 #include "Exceptions.h"
 #include "Native.h"
 #include "Utilities.h"
 #include "Utf8.h"
 #include "Platform.h"
 #include "Tutorial.h"
+#include "VM.h"
 
 // Forward declarations for helpers defined later in this file.
-static bool RuntimeError(KTN_VM* vm, const char* format, ...);
-KTN_ObjInstance* ExceptionCreate(KTN_VM* vm, const char* type, KTN_ObjString* message);
-static bool ThrowValue(KTN_VM* vm, KTN_ObjInstance* exception);
 void registerModuleFile(KTN_VM* vm, KTN_ObjModule* module);
 void registerRoot(KTN_VM* vm);
 
@@ -34,9 +31,9 @@ void registerRoot(KTN_VM* vm);
 // (execution continues at the handler), false when uncaught (caller must return RUNTIME_ERROR).
 #define KATANE_RUNTIME_ERROR(normal_fmt, katane_fmt, ...)   \
     ((vm)->kataneMode                                       \
-        ? RuntimeError((vm), (katane_fmt), ##__VA_ARGS__)  \
-        : RuntimeError((vm), (normal_fmt), ##__VA_ARGS__))
-        
+        ? KTN_RuntimeError((vm), (katane_fmt), ##__VA_ARGS__)  \
+        : KTN_RuntimeError((vm), (normal_fmt), ##__VA_ARGS__))
+
 static const char* KTN_WellKnownNameText[KTN_NAME_COUNT] = {
     "init",
     "toString",
@@ -94,10 +91,43 @@ KTN_ObjString* KTN_GetWellKnownName(KTN_VM* vm, KTN_WellKnownName id) {
 
 void KTN_WellKnownNamesMark(KTN_VM* vm, KTN_WellKnownNames* names);
 
-static void ResetStack(KTN_VM* vm) {
+void KTN_ResetStack(KTN_VM* vm) {
     vm->stackTop = vm->stack;
     vm->frameCount = 0;
     vm->openUpvalues = NULL;
+}
+
+static KTN_ObjUpvalue* CaptureUpvalue(KTN_VM* vm, KTN_Value* local) {
+    KTN_ObjUpvalue* previousUpvalue = NULL;
+    KTN_ObjUpvalue* Upvalue = vm->openUpvalues;
+
+    while (Upvalue != NULL && Upvalue->location > local) {
+        previousUpvalue = Upvalue;
+        Upvalue = Upvalue->next;
+    }
+
+    if (Upvalue != NULL && Upvalue->location == local)
+        return Upvalue;
+
+    KTN_ObjUpvalue* createdUpvalue = UpvalueNew(vm, local);
+
+    createdUpvalue->next = Upvalue;
+    if (previousUpvalue == NULL) {
+        vm->openUpvalues = createdUpvalue;
+    } else {
+        previousUpvalue->next = createdUpvalue;
+    }
+
+    return createdUpvalue;
+}
+
+void KTN_CloseUpvalues(KTN_VM* vm, KTN_Value* last) {
+    while (vm->openUpvalues != NULL && vm->openUpvalues->location >= last) {
+        KTN_ObjUpvalue* Upvalue = vm->openUpvalues;
+        Upvalue->closed = *Upvalue->location;
+        Upvalue->location = &Upvalue->closed;
+        vm->openUpvalues = Upvalue->next;
+    }
 }
 
 static void PrintStackTrace(KTN_VM* vm) {
@@ -118,13 +148,13 @@ static void PrintStackTrace(KTN_VM* vm) {
             KTN_CallFrame* internalFrame = &vm->frames[internalIndex];
 
             if (
-                frame->closure->function == internalFrame->closure->function && 
+                frame->closure->function == internalFrame->closure->function &&
                 (frame->ip - frame->closure->function->chunk.code) == (internalFrame->ip - internalFrame->closure->function->chunk.code)
             ) {
                 cycleStart = internalIndex;
                 cycleLength = frameIndex - internalIndex;
                 cycleRepetitions = (vm->frameCount - frameIndex) / cycleLength;
-                
+
                 foundRecursiveness = true;
                 break;
             }
@@ -158,80 +188,125 @@ static void PrintStackTrace(KTN_VM* vm) {
     }
 }
 
-// Core exception throwing machinery.
-// Returns true if the exception was caught by an active try/catch frame (VM state has been
-// redirected to the handler and execution should continue).
-// Returns false if uncaught (the exception has been printed to stderr and the stack reset).
-static bool ThrowValue(KTN_VM* vm, KTN_ObjInstance* exception) {
-    // Protect the exception from GC while we allocate the stack trace.
-    Push(vm, OBJECT_VALUE(exception));
+bool KTN_ThrowValue(KTN_VM* vm, KTN_ObjInstance* exception, bool buildTrace) {
+    if (buildTrace) {
+        Push(vm, OBJECT_VALUE(exception));
 
-    KTN_Value stackTraceValue = BuildStackTraceObject(vm, NULL);
-    Push(vm, stackTraceValue);
+        KTN_Value stackTraceValue = BuildStackTraceObject(vm, NULL);
+        Push(vm, stackTraceValue);
 
-    TableSet(vm, &exception->properties, STRING_COPY("stackTrace"), stackTraceValue);
-    TableSet(vm, &exception->properties, STRING_COPY("type"), OBJECT_VALUE(exception->kata->className));
+        TableSet(vm, &exception->properties, KTN_NAME(vm, KTN_NAME_STACK_TRACE), stackTraceValue);
+        TableSet(vm, &exception->properties, KTN_NAME(vm, KTN_NAME_TYPE), OBJECT_VALUE(exception->kata));
 
-    Pop(vm); // stackTraceValue
-    Pop(vm); // exception
-
-    if (vm->errorCount == 0) {
-        fflush(stdout);
-        PrintStackTrace(vm);
-        fprintf(stderr, "\n" COLOR_RED "%s" COLOR_RESET, exception->kata->className->chars);
-
-        KTN_Value message;
-        
-        if (TableGet(&exception->properties, STRING_COPY("message"), &message) && IS_STRING(message)) {
-            char* messageChars = AS_CSTRING(message);
-            if (messageChars[0] != '\0')
-                fprintf(stderr, ": %s", messageChars);
-        }
-
-        fputs("\n", stderr);
-
-        if (vm->frameCount > 0) {
-            KTN_CallFrame* frame = &vm->frames[vm->frameCount - 1];
-            KTN_ObjShiki* function = frame->closure->function;
-            size_t instruction = (size_t)(frame->ip - function->chunk.code - 1);
-            int line = KTN_ChunkGetLine(&function->chunk, (int)instruction);
-            char* content = KTN_ChunkGetSource(&function->chunk, (int)instruction);
-            if (function->name == NULL)
-                fprintf(stderr, "In " COLOR_CYAN "<script>" COLOR_RESET ":\n");
-            else
-                fprintf(stderr, "In " COLOR_CYAN "<%s()>" COLOR_RESET ":\n", function->name->chars);
-            fprintf(stderr, COLOR_MAGENTA "   %4d" COLOR_RESET " | %s\n", line, content);
-        }
-
-        ResetStack(vm);
-        return false;
+        Pop(vm);
+        Pop(vm);
     }
 
-    // Save frame info before ErrorPop zeros the struct fields.
-    KTN_ErrorFrame* errorFrame = ErrorPeek(vm);
-    KTN_CallFrame* handlerCallFrame = errorFrame->frame;
-    uint16_t handlerOffset = errorFrame->offset;
-    KTN_Value* handlerStackHead = errorFrame->stackHead;
+    while (true) {
+        if (vm->errorCount == 0) {
+            fflush(stdout);
+            PrintStackTrace(vm);
+            fprintf(stderr, "\n" COLOR_RED "%s" COLOR_RESET, exception->kata->className->chars);
 
-    ErrorPop(vm);
-    free(errorFrame);
+            KTN_Value message;
 
-    // Restore call stack depth to the frame that registered the catch handler.
-    vm->frameCount = (int)(handlerCallFrame - vm->frames) + 1;
-    vm->currentFrame = handlerCallFrame;
-    vm->currentFrame->ip = vm->currentFrame->closure->function->chunk.code + handlerOffset;
-    vm->stackTop = handlerStackHead;
+            if (TableGet(&exception->properties, KTN_NAME(vm, KTN_NAME_MESSAGE), &message) && IS_STRING(message)) {
+                char* messageChars = AS_CSTRING(message);
+                if (messageChars[0] != '\0')
+                    fprintf(stderr, ": %s", messageChars);
+            }
 
-    // Push the exception so the catch block can bind it as its first local.
-    Push(vm, OBJECT_VALUE(exception));
+            fputs("\n", stderr);
 
-    vm->caughtException = true;
-    return true;
+            if (vm->frameCount > 0) {
+                KTN_CallFrame* frame = &vm->frames[vm->frameCount - 1];
+                KTN_ObjShiki* function = frame->closure->function;
+                size_t instruction = (size_t)(frame->ip - function->chunk.code - 1);
+                int line = KTN_ChunkGetLine(&function->chunk, (int)instruction);
+                char* content = KTN_ChunkGetSource(&function->chunk, (int)instruction);
+
+                if (function->name == NULL)
+                    fprintf(stderr, "In " COLOR_CYAN "<script>" COLOR_RESET ":\n");
+                else
+                    fprintf(stderr, "In " COLOR_CYAN "<%s()>" COLOR_RESET ":\n", function->name->chars);
+
+                fprintf(stderr, COLOR_MAGENTA "   %4d" COLOR_RESET " | %s\n", line, content);
+            }
+
+            KTN_ResetStack(vm);
+            return false;
+        }
+
+        KTN_ErrorFrame* errorFrame = ErrorPeek(vm);
+        KTN_CallFrame* handlerCallFrame = errorFrame->frame;
+        KTN_Value* handlerStackHead = errorFrame->stackHead;
+
+        switch (errorFrame->state) {
+            case KTN_EF_WAITING: {
+                errorFrame->state = KTN_EF_IN_CATCH;
+
+                vm->frameCount = (int)(handlerCallFrame - vm->frames) + 1;
+                vm->currentFrame = handlerCallFrame;
+                vm->currentFrame->ip = errorFrame->catchTarget;
+                vm->stackTop = handlerStackHead;
+
+                Push(vm, OBJECT_VALUE(exception));
+
+                vm->caughtException = true;
+                return true;
+            }
+
+            case KTN_EF_IN_FINALLY: {
+                ErrorPop(vm);
+
+                if (errorFrame->deferredAction == KTN_DEFERRED_EXCEPTION) {
+                    KTN_ObjInstance* original = AS_INSTANCE(errorFrame->deferredValue);
+                    KTN_Value suppressed;
+
+                    if (!TableGet(&original->properties, KTN_NAME(vm, KTN_NAME_SUPPRESSED_ERRORS), &suppressed)) {
+                        KTN_ObjArray* array = ArrayNew(vm);
+                        suppressed = OBJECT_VALUE(array);
+
+                        TableSet(vm, &original->properties, KTN_NAME(vm, KTN_NAME_SUPPRESSED_ERRORS), suppressed);
+                    }
+
+                    ValueArrayWrite(vm, &AS_ARRAY(suppressed)->items, OBJECT_VALUE(exception));
+                    free(errorFrame);
+                    exception = original;
+                    continue;
+                }
+
+                free(errorFrame);
+                continue;
+            }
+
+            default:
+                break;
+        }
+
+        vm->caughtException = false;
+
+        if (errorFrame->finallyTarget != NULL) {
+            errorFrame->state = KTN_EF_IN_FINALLY;
+            errorFrame->deferredAction = KTN_DEFERRED_EXCEPTION;
+            errorFrame->deferredValue = OBJECT_VALUE(exception);
+            errorFrame->targetScopeDepth = 0;
+
+            vm->frameCount = (int)(handlerCallFrame - vm->frames) + 1;
+            vm->currentFrame = handlerCallFrame;
+            KTN_CloseUpvalues(vm, errorFrame->stackHead);
+            vm->currentFrame->ip = errorFrame->finallyTarget;
+            vm->stackTop = handlerStackHead;
+
+            return true;
+        }
+
+        ErrorPop(vm);
+        free(errorFrame);
+    }
 }
 
-// C-level runtime error: creates a RuntimeError exception and throws it.
-// Returns true when caught (execution continues at handler), false when uncaught.
-static bool RuntimeError(KTN_VM* vm, const char* format, ...) {
+bool KTN_RuntimeError(KTN_VM* vm, const char* format, ...) {
     va_list args;
     va_start(args, format);
     char* message = NULL;
@@ -239,122 +314,48 @@ static bool RuntimeError(KTN_VM* vm, const char* format, ...) {
     va_end(args);
 
     Push(vm, OBJECT_VALUE(StringTake(vm, message, length)));
-    KTN_ObjInstance* exception = ExceptionCreate(vm, "RuntimeError", AS_STRING(Peek(vm, 0)));
+    KTN_ObjInstance* exception = KTN_ExceptionCreate(vm, "RuntimeError", AS_STRING(Peek(vm, 0)));
     Pop(vm);
 
-    return ThrowValue(vm, exception);
+    return KTN_ThrowValue(vm, exception, true);
 }
 
-bool ThrowException(KTN_VM* vm, const char* type, bool isAssert, const char* format, ...) {
+bool KTN_ThrowException(KTN_VM* vm, const char* type, bool isAssert, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    
+
     char* message = NULL;
     int length = vasprintf(&message, format, args);
 
     va_end(args);
 
     const char* exceptionType = (isAssert) ? "AssertionError" : type;
-    KTN_ObjInstance* exception = ExceptionCreate(vm, exceptionType, StringTake(vm, message, length));
+    KTN_ObjInstance* exception = KTN_ExceptionCreate(vm, exceptionType, StringTake(vm, message, length));
 
-    /*if (vm->hasPendingException) {
-        if (!IS_INSTANCE(vm->pendingException)) {
-            KTN_VMPanic(vm, "Stored exception in VM is not an Exception instance.");
-        }
-
-        KTN_ObjInstance* originalException = AS_INSTANCE(vm->pendingException);
-        KTN_Value suppressed;
-
-        if (!TableGet(&originalException->properties, KTN_NAME(vm, KTN_NAME_SUPPRESSED_ERRORS), &suppressed) || !IS_ARRAY(suppressed)) {
-            KTN_ObjArray* exceptionArray = ArrayNew(vm);
-            suppressed = OBJECT_VALUE(exceptionArray);
-            TableSet(vm, &originalException->properties, KTN_NAME(vm, KTN_NAME_SUPPRESSED_ERRORS), suppressed);
-        }
-
-        ValueArrayWrite(vm, &AS_ARRAY(suppressed)->items, exception);
-        
-        // We return true to suppress the new exception.
-        // Since we are already supposed to be handling the original exception, should work.
-        return true;
-    }*/
-
-    return ThrowValue(vm, exception);
+    return KTN_ThrowValue(vm, exception, true);
 }
 
-static KTN_ObjKata* ExceptionGet(KTN_VM* vm, const char* name) {
-    if (!name) {
-        return vm->exceptionClass;
-    }
-
-    KTN_Value exceptionClass;
-    if (TableGet(&vm->globals, STRING_COPY(name), &exceptionClass)) {
-        if (IS_CLASS(exceptionClass)) 
-            return AS_CLASS(exceptionClass);
-    }
-
-    return vm->exceptionClass;
-}
-
-inline KTN_ObjInstance* ExceptionCreate(KTN_VM* vm, const char* type, KTN_ObjString* message) {
-    KTN_ObjInstance* instance = InstanceNew(vm, ExceptionGet(vm, type));
-    Push(vm, OBJECT_VALUE(instance));
-    TableSet(vm, &instance->properties, STRING_COPY("message"), OBJECT_VALUE(message));
+bool KTN_ThrowTypeError(KTN_VM* vm, const char* expectedBuffer, const char* actualName, const char* context) {
+    char msgBuffer[512];
+    snprintf(msgBuffer, sizeof(msgBuffer), "%s: expected %s, got %s.", context, expectedBuffer, actualName);
+    KTN_ObjString* message = StringCopy(vm, msgBuffer, (int)strlen(msgBuffer));
+    Push(vm, OBJECT_VALUE(message));
+    KTN_ObjInstance* exception = KTN_ExceptionCreate(vm, "TypeError", message);
+    
     Pop(vm);
-    return instance;
-}
-
-// Check that an ObjClass is a subclass of vm->exceptionClass (directly or transitively).
-static KTN_MAYBE_UNUSED bool IsExceptionSubclass(KTN_VM* vm, KTN_ObjKata* kata) {
-    return IsInstanceOfKata(kata, vm->exceptionClass);
-}
-
-// Throw a proper TypeError with a human-readable message.
-// Returns true if caught, false if uncaught.
-static bool ThrowTypeError(KTN_VM* vm, const char* expectedBuffer, const char* actualName, const char* context) {
-    char msgBuf[512];
-    snprintf(msgBuf, sizeof(msgBuf), "%s: expected %s, got %s.", context, expectedBuffer, actualName);
-    KTN_ObjString* msg = StringCopy(vm, msgBuf, (int)strlen(msgBuf));
-    Push(vm, OBJECT_VALUE(msg));
-    KTN_ObjInstance* exc = ExceptionCreate(vm, "TypeError", msg);
-    Pop(vm);
-    return ThrowValue(vm, exc);
-}
-
-static KTN_MAYBE_UNUSED bool ThrowKeyError(KTN_VM* vm, const char* key) {
-    char msgBuf[512];
-
-    snprintf(msgBuf, sizeof(msgBuf), "\"%s\"", key);
-    KTN_ObjString* msg = StringCopy(vm, msgBuf, (int)strlen(msgBuf));
-    Push(vm, OBJECT_VALUE(msg));
-    KTN_ObjInstance* exc = ExceptionCreate(vm, "KeyError", msg);
-    Pop(vm);
-
-    return ThrowValue(vm, exc);
-}
-
-// Return the runtime type name of a value as a C string literal (no allocation).
-static const char* ValueTypeName(KTN_Value value) {
-    if (IS_INT(value))         return "Int";
-    if (IS_DOUBLE(value))      return "Float";
-    if (IS_BOOL(value))        return "Bool";
-    if (IS_NULL(value))        return "Null";
-    if (IS_STRING(value))      return "String";
-    if (IS_INSTANCE(value))    return AS_INSTANCE(value)->kata->className->chars;
-    if (IS_CLASS(value))       return "Kata";
-    if (IS_ARRAY(value))       return "Array";
-    if (IS_MAP(value))         return "Map";
-    if (IS_CLOSURE(value) || IS_FUNCTION(value)) return "Shiki";
-    return "unknown";
+    return KTN_ThrowValue(vm, exception, true);
 }
 
 // Return the cached primitive ObjClass* for a value, or NULL for object types.
-// Used for O(1) primitive matching without any table lookup.>
-static KTN_MAYBE_UNUSED KTN_ObjKata* PrimitiveClassOf(KTN_VM* vm, KTN_Value value) {
-    if (IS_INT(value))     return vm->typeInt;
-    if (IS_DOUBLE(value))  return vm->typeFloat;
-    if (IS_BOOL(value))    return vm->typeBool;
-    if (IS_NULL(value))    return vm->typeNull;
-    if (IS_STRING(value))  return vm->typeString;
+// Used for O(1) primitive matching without any table lookup.
+static KTN_ObjKata* PrimitiveClassOf(KTN_VM* vm, KTN_Value value) {
+    if (IS_INT(value))      return vm->typeInt;
+    if (IS_DOUBLE(value))   return vm->typeFloat;
+    if (IS_BOOL(value))     return vm->typeBool;
+    if (IS_NULL(value))     return vm->typeNull;
+    if (IS_STRING(value))   return vm->typeString;
+    if (IS_ARRAY(value))    return vm->typeArray;
+    if (IS_MAP(value))      return vm->typeMap;
 
     return NULL;
 }
@@ -388,7 +389,7 @@ static DECLARE_NATIVE(Input) {
     if (ARGUMENT_COUNT > 0) {
         EXPECT_ARGC(1);
         EXPECT_ARG_STRING(0);
-    
+
         printf("%s", AS_CSTRING(ARG(0)));
     }
 
@@ -419,28 +420,28 @@ static DECLARE_NATIVE(ReadFile) {
     char* filePath = AS_CSTRING(ARG(0));
     char* file = KTN_FileRead(filePath, &size);
     if (!file) {
-        RuntimeError(vm, "Couldn't read file \"%s\".\n", filePath);
-        RETURN_NULL;
+        KTN_RuntimeError(vm, "Couldn't read file \"%s\".\n", filePath);
+        RETURN_ERROR(NULL_VALUE);
     }
-    
+
     KTN_ObjString* fileString = StringTake(vm, file, size);
-    
+
     RETURN_VALUE(OBJECT_VALUE(fileString));
 }
 
 static DECLARE_NATIVE(Length) {
     if (ARGUMENT_COUNT != 1) {
-        (void)KATANE_RUNTIME_ERROR("len expected 1 argument, got %d.", COLOR_MAGENTA "Eep~" COLOR_RESET " len wants exactly one argument... " COLOR_CYAN "%d" COLOR_RESET " is too many tails for me to count~ ♡", ARGUMENT_COUNT);
-        return (KTN_NativeResult){false, NULL_VALUE};
+        (void)KATANE_RUNTIME_ERROR("length expected 1 argument, got %d.", COLOR_MAGENTA "Eep~" COLOR_RESET " len wants exactly one argument... " COLOR_CYAN "%d" COLOR_RESET " is too many tails for me to count~ ♡", ARGUMENT_COUNT);
+        RETURN_ERROR(NULL_VALUE);
     }
 
     if (IS_STRING(ARG(0)))
         return (KTN_NativeResult){true, INT_VALUE(AS_STRING(ARG(0))->charLength)};
-    
+
     if (IS_ARRAY(ARG(0)))
         return (KTN_NativeResult){true, INT_VALUE(AS_ARRAY(ARG(0))->items.count)};
-    
-    RuntimeError(vm, "len expected a string or array.");
+
+    KTN_RuntimeError(vm, "length expected a string or array.");
     return (KTN_NativeResult){false, NULL_VALUE};
 }
 
@@ -462,16 +463,16 @@ static DECLARE_NATIVE(Help) {
                "   Ara ara~ You called me without offering anything?\n"
                "   How cheeky~ Let this cute fox guide you properly ♡\n\n"
 
-               "   " COLOR_CYAN "help(shiki)" COLOR_RESET "     - Show function signature and docs.\n"
-               "   " COLOR_CYAN "help(kata)" COLOR_RESET "      - Show class information.\n"
-               "   " COLOR_CYAN "help(mochi)" COLOR_RESET "     - Show info about any value.\n"
-               "   " COLOR_CYAN "help(module)" COLOR_RESET "   - List module contents.\n\n"
+               "   " COLOR_CYAN "help(shiki)" COLOR_RESET "       Show function signature and docs.\n"
+               "   " COLOR_CYAN "help(kata)" COLOR_RESET "        Show class information.\n"
+               "   " COLOR_CYAN "help(mochi)" COLOR_RESET "       Show info about any value.\n"
+               "   " COLOR_CYAN "help(module)" COLOR_RESET "     List module contents.\n\n"
 
                "   " COLOR_CYAN "Examples:" COLOR_RESET "\n"
-               "       help(print)        - Peek at a built-in shiki.\n"
-               "       help(MyKata)       - Explore a class.\n"
-               "       help(42)           - See info about a number.\n"
-               "       help(\"hello\")    - Learn about strings.\n\n"
+               "       help(print)          Peek at a built-in shiki.\n"
+               "       help(MyKata)         Explore a class.\n"
+               "       help(42)             See info about a number.\n"
+               "       help(\"hello\")      Learn about strings.\n\n"
 
                COLOR_MAGENTA "   Be nice to me and I'll be extra helpful~ " COLOR_RESET "\n");
         RETURN_NULL;
@@ -585,18 +586,18 @@ static DECLARE_NATIVE(Help) {
                 if (accessor->getter != NULL && accessor->getter->function->signature != NULL &&
                         accessor->getter->function->signature->display != NULL)
                     printf("   " COLOR_CYAN "get" COLOR_RESET " %s\n", accessor->getter->function->signature->display->chars);
-                
+
                 if (accessor->setter != NULL && accessor->setter->function->signature != NULL &&
                         accessor->setter->function->signature->display != NULL)
                     printf("   " COLOR_CYAN "set" COLOR_RESET " %s\n", accessor->setter->function->signature->display->chars);
-                
+
                 continue;
             }
 
             if (!IS_CLOSURE(entry->value)) continue;
 
             KTN_ObjSignature* signature = AS_CLOSURE(entry->value)->function->signature;
-            
+
             if (signature == NULL || signature->display == NULL) {
                 printf("No signature...");
                 continue;
@@ -608,20 +609,8 @@ static DECLARE_NATIVE(Help) {
         RETURN_NULL;
     }
 
-    KTN_ObjKata* primitiveKata = NULL;
-    const char* typeName = ValueTypeName(value);
-
-    if (IS_INT(value)) {
-        primitiveKata = vm->typeInt;        // or typeFloat depending on your VM design
-    } else if (IS_DOUBLE(value)) {
-        primitiveKata = vm->typeFloat;
-    } else if (IS_BOOL(value)) {
-        primitiveKata = vm->typeBool;
-    } else if (IS_STRING(value)) {
-        primitiveKata = vm->typeString;
-    } else if (IS_NULL(value)) {
-        primitiveKata = vm->typeNull;
-    }
+    KTN_ObjKata* primitiveKata = PrimitiveClassOf(vm, value);
+    const char* typeName = KTN_ValueTypeName(value);
 
     if (primitiveKata) {
         printf(COLOR_CYAN "mochi " COLOR_RESET "%s\n", typeName);
@@ -631,7 +620,6 @@ static DECLARE_NATIVE(Help) {
         else
             printf("   " COLOR_MAGENTA "A built-in primitive type~ Soft and simple.\n" COLOR_RESET);
 
-        // Extra info for the actual value
         printf("   Value: ");
         ObjectRepr(value);
         printf("\n");
@@ -652,7 +640,7 @@ static DECLARE_NATIVE(Help) {
     else if (IS_INSTANCE(value)) {
         KTN_ObjKata* k = AS_INSTANCE(value)->kata;
         printf("   Instance of kata " COLOR_CYAN "%s" COLOR_RESET "\n", k->className->chars);
-        
+
         if (k->docs && k->docs->length > 0)
             printf("   %s\n", k->docs->chars);
         else
@@ -672,6 +660,47 @@ static DECLARE_NATIVE(Help) {
     }
 
     RETURN_NULL;
+}
+
+static DECLARE_NATIVE(MapGetKeys) {
+    EXPECT_ARGC(1);
+    EXPECT_ARG_MAP(0);
+
+    KTN_ObjMap* map = AS_MAP(ARG(0));
+    KTN_Value array;
+    if (!MapGetKeys(vm, map, &array)) {
+        KTN_RuntimeError(vm, "Something went wrong.");
+        RETURN_ERROR(NULL_VALUE);
+    }
+
+    RETURN_VALUE(array);
+}
+
+static DECLARE_NATIVE(MapGetValues) {
+    EXPECT_ARGC(1);
+    EXPECT_ARG_MAP(0);
+
+    KTN_ObjMap* map = AS_MAP(ARG(0));
+    KTN_Value array;
+    if (!MapGetValues(vm, map, &array)) {
+        KTN_RuntimeError(vm, "Something went wrong.");
+        RETURN_ERROR(NULL_VALUE);
+    }
+
+    RETURN_VALUE(array);
+}
+
+static DECLARE_NATIVE(Stringify) {
+    EXPECT_ARGC(1);
+
+    KTN_ObjString* str = ObjectToString(vm, ARG(0));
+
+    if (str == NULL) {
+        KTN_RuntimeError(vm, "Something went wrong.");
+        RETURN_ERROR(NULL_VALUE);
+    }
+
+    RETURN_VALUE(OBJECT_VALUE(str));
 }
 
 static KTN_MAYBE_UNUSED void PrintCallFrame(KTN_VM* vm, const KTN_CallFrame* frame) {
@@ -737,10 +766,10 @@ static FinalWriteStatus CanAssignFinalProperty(KTN_VM* vm, KTN_Value receiver, K
 }
 
 void VMInit(KTN_VM* vm) {
-    ResetStack(vm);
+    KTN_ResetStack(vm);
     srand(time(NULL));
     vm->parentVM = NULL;
-    ResetStack(vm);
+    KTN_ResetStack(vm);
 
     vm->kataneMode = true;
 
@@ -757,7 +786,9 @@ void VMInit(KTN_VM* vm) {
     vm->typeBool = NULL;
     vm->typeString = NULL;
     vm->typeNull = NULL;
-    
+    vm->typeArray = NULL;
+    vm->typeMap = NULL;
+
     vm->showWarnings = false;
     vm->shouldPrintBytecode = false;
     vm->shouldExitAfterBytecode = false;
@@ -775,12 +806,12 @@ void VMInit(KTN_VM* vm) {
     vm->grayStack = NULL;
 
     vm->errorCount = 0;
-    for (int i = 0; i < ERRORS_MAX; i++) vm->errors[i] = NULL;
+    for (int i = 0; i < MAX_ERRORS; i++) vm->errors[i] = NULL;
 
     // As you can guess, we allocate a small safeguard piece of memory to make sure the GC can run.
     vm->safeguardStack = malloc(sizeof(KTN_Object*) * 4);
     if (vm->safeguardStack == NULL)
-        printf("> Failed to allocate safeguard stack.\n");
+        fprintf(stderr, "[ERROR]: Failed to allocate safeguard stack.\n");
 
     TableInit(&vm->strings);
     TableInit(&vm->globals);
@@ -797,7 +828,7 @@ void VMInit(KTN_VM* vm) {
     KTN_DescriptorSetInit(&vm->typeDescriptors);
     TableInit(&vm->globalTypes);
 
-    vm->initString = NULL; 
+    vm->initString = NULL;
 
     DefineNative(vm, "clock", GET_NATIVE(Clock), "clock()", "Returns the current timestamp.");
     DefineNative(vm, "input", GET_NATIVE(Input), "input(message: String = "")", "Gets input from stdin, showing an optional prompt message.");
@@ -808,6 +839,9 @@ void VMInit(KTN_VM* vm) {
     DefineNative(vm, "length", GET_NATIVE(Length), "length(value: String | Array): Int", "Returns the length of a string or array.");
     DefineNative(vm, "tutorial", GET_NATIVE(Tutorial), "tutorial()", "Start the interactive Katane tutorial.");
     DefineNative(vm, "credits", GET_NATIVE(Credits), "credits()", "Credits of everyone who has worked in the Katane Programming Language!");
+    DefineNative(vm, "mapGetKeys", GET_NATIVE(MapGetKeys), "mapGetKeys(map: Map)", "Returns the keys of the map as a list.");
+    DefineNative(vm, "mapGetValues", GET_NATIVE(MapGetValues), "mapGetValues(map: Map)", "Returns a list containing all of the values in the map.");
+    DefineNative(vm, "stringify", GET_NATIVE(Stringify), "stringify(value)", "Converts any object into its string representation.");
 }
 
 void VMFree(KTN_VM* vm) {
@@ -834,7 +868,7 @@ void VMFree(KTN_VM* vm) {
 
         free(vm->errors[i]);
     }
-    
+
     free(vm);
 }
 
@@ -858,7 +892,7 @@ inline KTN_Value Peek(KTN_VM* vm, int distance) {
 }
 
 inline void ErrorPush(KTN_VM* vm, KTN_ErrorFrame* frame) {
-    if (vm->errorCount >= ERRORS_MAX) {
+    if (vm->errorCount >= MAX_ERRORS) {
         fprintf(stderr, "[" COLOR_RED "ERROR" COLOR_RESET "]: Catch frame stack overflow.\n");
         exit(11);
         return;
@@ -885,8 +919,8 @@ static bool Call(KTN_VM* vm, KTN_ObjClosure* closure, int argumentCount, KTN_Obj
         return true;
     }
 
-    if (vm->frameCount == FRAMES_MAX) {
-        if (!KATANE_RUNTIME_ERROR("Stack Overflow. Limit is %d.", COLOR_MAGENTA "Kyaa~" COLOR_RESET " My fluffy tail can only wrap around " COLOR_CYAN "%d" COLOR_RESET " frames... you're pushing me way too deep, naughty~! 🦊", FRAMES_MAX)) return false;
+    if (vm->frameCount == MAX_FRAMES) {
+        if (!KATANE_RUNTIME_ERROR("Stack Overflow. Limit is %d.", COLOR_MAGENTA "Kyaa~" COLOR_RESET " My fluffy tail can only wrap around " COLOR_CYAN "%d" COLOR_RESET " frames... you're pushing me way too deep, naughty~! 🦊", MAX_FRAMES)) return false;
         return true;
     }
 
@@ -921,7 +955,7 @@ static bool CallValue(KTN_VM* vm, KTN_Value callee, int argumentCount) {
                     KTN_NativeResult result = constructorFn(vm, callArgs);
 
                     if (!result.success) return false;
-                    
+
                     vm->stackTop -= argumentCount;
                     return true;
                 } else if (argumentCount != 0) {
@@ -942,7 +976,7 @@ static bool CallValue(KTN_VM* vm, KTN_Value callee, int argumentCount) {
                     .named = NULL,
                     .namedCount = 0
                 };
-                
+
                 NativeFnEx native = AS_NATIVE(callee)->function;
                 KTN_NativeResult result = native(vm, callArgs);
 
@@ -957,7 +991,7 @@ static bool CallValue(KTN_VM* vm, KTN_Value callee, int argumentCount) {
                 KTN_ObjClosure* closure = AS_CLOSURE(callee);
                 return Call(vm, closure, argumentCount, closure->owner);
             }
-                
+
             case OBJ_BOUND_METHOD: {
                 KTN_ObjBoundMethod* bound = AS_BOUND_METHOD(callee);
                 vm->stackTop[-argumentCount - 1] = bound->receiver;
@@ -976,14 +1010,14 @@ static bool InvokeFromClass(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name, 
         if (IS_CLOSURE(kata->constructor))
             return Call(vm, AS_CLOSURE(kata->constructor), argumentCount, kata);
 
-        if (!RuntimeError(vm, "Class \"%s\" has no constructor.", kata->className->chars))
+        if (!KTN_RuntimeError(vm, "Class \"%s\" has no constructor.", kata->className->chars))
             return false;
         return true;
     }
 
     KTN_Value method;
     if (!TableGet(&kata->methods, name, &method)) {
-        if (!RuntimeError(vm, "\"%s\" object has no method \"%s\".", kata->className->chars, name->chars))
+        if (!KTN_RuntimeError(vm, "\"%s\" object has no method \"%s\".", kata->className->chars, name->chars))
             return false;
         return true;
     }
@@ -1009,20 +1043,20 @@ static bool InvokeFromClass(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name, 
             .named = NULL,
             .namedCount = 0
         };
-        
+
         NativeFnEx nativeFn = AS_NATIVE(method)->function;
         KTN_NativeResult result = nativeFn(vm, callArgs);
 
         if (!result.success) return false;
-        
+
         vm->stackTop -= argumentCount + 1;
         Push(vm, result.value);
-        
+
         return true;
     }
 
     if (!IS_CLOSURE(method)) {
-        if (!RuntimeError(vm, "\"%s\" object has no method \"%s\".", kata->className->chars, name->chars))
+        if (!KTN_RuntimeError(vm, "\"%s\" object has no method \"%s\".", kata->className->chars, name->chars))
             return false;
         return true;
     }
@@ -1064,7 +1098,7 @@ static bool BindMethod(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name) {
         return true;
     }
 
-    
+
     if (!canAccess) {
         if (!ThrowException(vm, "PropertyError", false, "Method \"%s\" is private and cannot be accessed in the current scope.", name->chars))
             return false;
@@ -1087,7 +1121,7 @@ static bool BindMethod(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name) {
 
                 return true;
             }
-            
+
             return false;
         }
 
@@ -1102,37 +1136,56 @@ static bool BindMethod(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name) {
     return true;
 }
 
-static KTN_ObjUpvalue* CaptureUpvalue(KTN_VM* vm, KTN_Value* local) {
-    KTN_ObjUpvalue* previousUpvalue = NULL;
-    KTN_ObjUpvalue* Upvalue = vm->openUpvalues;
+static KTN_InterpretResult DoReturn(KTN_VM* vm, int exitFrame) {
+    KTN_Value result = Pop(vm);
+    KTN_CloseUpvalues(vm, vm->currentFrame->slots);
 
-    while (Upvalue != NULL && Upvalue->location > local) {
-        previousUpvalue = Upvalue;
-        Upvalue = Upvalue->next;
+    int returnDescriptor = vm->currentFrame->closure->function->returnTypeDescriptor;
+
+    if (returnDescriptor >= 0) {
+        KTN_Value typeDescriptorValue = vm->currentFrame->closure->function->chunk.constants.values[returnDescriptor];
+
+        if (IS_TYPE_DESCRIPTOR(typeDescriptorValue)) {
+            KTN_ObjTypeDescriptor* descriptor = AS_TYPE_DESCRIPTOR(typeDescriptorValue);
+
+            if (!KTN_TypeDescriptorCheck(vm, result, descriptor)) {
+                char expectedBuffer[256];
+
+                KTN_TypeDescriptorFormat(descriptor, expectedBuffer, sizeof(expectedBuffer));
+
+                if (!KTN_ThrowTypeError(vm, expectedBuffer, KTN_ValueTypeName(result), "Return type error"))
+                    return RUNTIME_ERROR(NULL_VALUE);
+
+                vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                return RUNTIME_OK(NULL_VALUE);
+            }
+        }
     }
 
-    if (Upvalue != NULL && Upvalue->location == local) 
-        return Upvalue;
-
-    KTN_ObjUpvalue* createdUpvalue = UpvalueNew(vm, local);
-
-    createdUpvalue->next = Upvalue;
-    if (previousUpvalue == NULL) {
-        vm->openUpvalues = createdUpvalue;
-    } else {
-        previousUpvalue->next = createdUpvalue;
+    // Free all catch frames that belong to this call frame (handles early returns).
+    while (vm->errorCount > 0 && vm->errors[vm->errorCount - 1]->frame == vm->currentFrame) {
+        KTN_ErrorFrame* errorFrame = ErrorPop(vm);
+        free(errorFrame);
     }
 
-    return createdUpvalue;
-}
+    vm->frameCount--;
 
-static void CloseUpvalues(KTN_VM* vm, KTN_Value* last) {
-    while (vm->openUpvalues != NULL && vm->openUpvalues->location >= last) {
-        KTN_ObjUpvalue* Upvalue = vm->openUpvalues;
-        Upvalue->closed = *Upvalue->location;
-        Upvalue->location = &Upvalue->closed;
-        vm->openUpvalues = Upvalue->next;
+    if (vm->frameCount == 0) {
+        KTN_InterpretResult interpretResult = RUNTIME_OK(vm->finalResult);
+        PopN(vm, 2);
+        return interpretResult;
     }
+
+    vm->stackTop = vm->currentFrame->slots;
+    Push(vm, result);
+
+    vm->currentFrame = &vm->frames[vm->frameCount - 1];
+
+    if (vm->frameCount == exitFrame) {
+        return RUNTIME_OK(vm->finalResult);
+    }
+
+    return RUNTIME_OK(NULL_VALUE);
 }
 
 static bool DefineMethod(KTN_VM* vm, KTN_ObjString* name) {
@@ -1143,27 +1196,27 @@ static bool DefineMethod(KTN_VM* vm, KTN_ObjString* name) {
 
     if (strcmp(name->chars, kata->className->chars) == 0) {
         if (!IS_NULL(kata->constructor)) {
-            if (!RuntimeError(vm, "Duplicate constructor defined for kata \"%s\".", kata->className->chars))
+            if (!KTN_RuntimeError(vm, "Duplicate constructor defined for kata \"%s\".", kata->className->chars))
                 return false;
             return true;
         }
 
         if (type != TYPE_CONSTRUCTOR) {
-            if (!RuntimeError(vm, "Cannot use class name \"%s\" for a %s.", kata->className->chars, (type == TYPE_GETTER) ? "getter" : "setter"))
+            if (!KTN_RuntimeError(vm, "Cannot use class name \"%s\" for a %s.", kata->className->chars, (type == TYPE_GETTER) ? "getter" : "setter"))
                 return false;
             return true;
         }
 
         kata->constructor = method;
-        
+
         Pop(vm);
         return true;
     }
-    
+
     closure->owner = kata;
 
     if (TableContains(&kata->properties, name)) {
-        if (!RuntimeError(vm, "Cannot create method \"%s\" for \"%s\" because a property already exists.", name->chars, kata->className->chars))
+        if (!KTN_RuntimeError(vm, "Cannot create method \"%s\" for \"%s\" because a property already exists.", name->chars, kata->className->chars))
             return false;
         return true;
     }
@@ -1179,13 +1232,13 @@ static bool DefineMethod(KTN_VM* vm, KTN_ObjString* name) {
             }
 
             if (type == TYPE_GETTER) {
-                if (!RuntimeError(vm, "Cannot create getter \"%s\" for \"%s\" because a method already exists.", name->chars, kata->className->chars))
+                if (!KTN_RuntimeError(vm, "Cannot create getter \"%s\" for \"%s\" because a method already exists.", name->chars, kata->className->chars))
                     return false;
                 return true;
             }
 
             if (type == TYPE_SETTER) {
-                if (!RuntimeError(vm, "Cannot create setter \"%s\" for \"%s\" because a method already exists.", name->chars, kata->className->chars))
+                if (!KTN_RuntimeError(vm, "Cannot create setter \"%s\" for \"%s\" because a method already exists.", name->chars, kata->className->chars))
                     return false;
                 return true;
             }
@@ -1200,28 +1253,28 @@ static bool DefineMethod(KTN_VM* vm, KTN_ObjString* name) {
 
             if (type == TYPE_GETTER) {
                 if (accessor->getter != NULL) {
-                    if (!RuntimeError(vm, "Duplicate getter \"%s\" for \"%s\".", name->chars, kata->className->chars))
+                    if (!KTN_RuntimeError(vm, "Duplicate getter \"%s\" for \"%s\".", name->chars, kata->className->chars))
                         return false;
                     return true;
                 }
 
                 accessor->getter = closure;
-                
+
                 Pop(vm);
                 return true;
             } else if (type == TYPE_SETTER) {
                 if (accessor->setter!= NULL) {
-                    if (!RuntimeError(vm, "Duplicate setter \"%s\" for \"%s\".", name->chars, kata->className->chars))
+                    if (!KTN_RuntimeError(vm, "Duplicate setter \"%s\" for \"%s\".", name->chars, kata->className->chars))
                         return false;
                     return true;
                 }
 
                 accessor->setter = closure;
-                
+
                 Pop(vm);
                 return true;
             } else {
-                if (!RuntimeError(vm, "Cannot create method \"%s\" for \"%s\" because a property accessor already exists.", name->chars, kata->className->chars))
+                if (!KTN_RuntimeError(vm, "Cannot create method \"%s\" for \"%s\" because a property accessor already exists.", name->chars, kata->className->chars))
                     return false;
                 return true;
             }
@@ -1241,7 +1294,7 @@ static bool DefineMethod(KTN_VM* vm, KTN_ObjString* name) {
             accessor->setter = closure;
         else
             KTN_VMPanic(vm, "DefineMethod called with function that is neither a closure nor an accessor.");
-    
+
         TableSet(vm, &kata->methods, name, OBJECT_VALUE(accessor));
     }
 
@@ -1254,11 +1307,11 @@ static bool DefineStaticMethod(KTN_VM* vm, KTN_ObjString* name) {
     KTN_ObjKata* kata = AS_CLASS(Peek(vm, 1));
     KTN_ObjClosure* closure = AS_CLOSURE(method);
     KTN_ShikiType type = closure->function->type;
-    
+
     closure->owner = kata;
 
     if (TableContains(&kata->staticProperties, name)) {
-        if (!RuntimeError(vm, "Cannot create method \"%s\" for \"%s\" because a property already exists.", name->chars, kata->className->chars))
+        if (!KTN_RuntimeError(vm, "Cannot create method \"%s\" for \"%s\" because a property already exists.", name->chars, kata->className->chars))
             return false;
         return true;
     }
@@ -1269,19 +1322,19 @@ static bool DefineStaticMethod(KTN_VM* vm, KTN_ObjString* name) {
         // We check for a duplicate closure. If it is, we error out.
         if (IS_CLOSURE(existing)) {
             if (type == TYPE_METHOD) {
-                if (!RuntimeError(vm, "Duplicate \"%s\" static method found for \"%s\".", name->chars, kata->className->chars))
+                if (!KTN_RuntimeError(vm, "Duplicate \"%s\" static method found for \"%s\".", name->chars, kata->className->chars))
                     return false;
                 return true;
             }
 
             if (type == TYPE_GETTER) {
-                if (!RuntimeError(vm, "Cannot create static getter \"%s\" for \"%s\" because a method already exists.", name->chars, kata->className->chars))
+                if (!KTN_RuntimeError(vm, "Cannot create static getter \"%s\" for \"%s\" because a method already exists.", name->chars, kata->className->chars))
                     return false;
                 return true;
             }
 
             if (type == TYPE_SETTER) {
-                if (!RuntimeError(vm, "Cannot create static setter \"%s\" for \"%s\" because a method already exists.", name->chars, kata->className->chars))
+                if (!KTN_RuntimeError(vm, "Cannot create static setter \"%s\" for \"%s\" because a method already exists.", name->chars, kata->className->chars))
                     return false;
                 return true;
             }
@@ -1296,28 +1349,28 @@ static bool DefineStaticMethod(KTN_VM* vm, KTN_ObjString* name) {
 
             if (type == TYPE_GETTER) {
                 if (accessor->getter != NULL) {
-                    if (!RuntimeError(vm, "Duplicate static getter \"%s\" for \"%s\".", name->chars, kata->className->chars))
+                    if (!KTN_RuntimeError(vm, "Duplicate static getter \"%s\" for \"%s\".", name->chars, kata->className->chars))
                         return false;
                     return true;
                 }
 
                 accessor->getter = closure;
-                
+
                 Pop(vm);
                 return true;
             } else if (type == TYPE_SETTER) {
                 if (accessor->setter!= NULL) {
-                    if (!RuntimeError(vm, "Duplicate static setter \"%s\" for \"%s\".", name->chars, kata->className->chars))
+                    if (!KTN_RuntimeError(vm, "Duplicate static setter \"%s\" for \"%s\".", name->chars, kata->className->chars))
                         return false;
                     return true;
                 }
 
                 accessor->setter = closure;
-                
+
                 Pop(vm);
                 return true;
             } else {
-                if (!RuntimeError(vm, "Cannot create static method \"%s\" for \"%s\" because a property accessor already exists.", name->chars, kata->className->chars))
+                if (!KTN_RuntimeError(vm, "Cannot create static method \"%s\" for \"%s\" because a property accessor already exists.", name->chars, kata->className->chars))
                     return false;
                 return true;
             }
@@ -1337,7 +1390,7 @@ static bool DefineStaticMethod(KTN_VM* vm, KTN_ObjString* name) {
             accessor->setter = closure;
         else
             KTN_VMPanic(vm, "DefineStaticMethod called with function that is neither a closure nor an accessor.");
-    
+
         TableSet(vm, &kata->staticMethods, name, OBJECT_VALUE(accessor));
     }
 
@@ -1349,7 +1402,7 @@ static KTN_MAYBE_UNUSED void DefineProperty(KTN_VM* vm, KTN_ObjString* name, boo
     KTN_Value property = Peek(vm, 0);
     KTN_ObjKata* kata = AS_CLASS(Peek(vm, 1));
 
-    if (!isStatic) 
+    if (!isStatic)
         TableSet(vm, &kata->properties, name, property);
     else
         TableSet(vm, &kata->staticProperties, name, property);
@@ -1388,7 +1441,7 @@ static KTN_MAYBE_UNUSED void dumpVMState(KTN_VM* vm, const char* reason) {
 
     int line = KTN_ChunkGetLine(&function->chunk, (int)instruction);
     char* content = KTN_ChunkGetSource(&function->chunk, (int)instruction);
-    
+
     fprintf(stderr, "\n--- VM State Dump (%s) ---\n", reason);
     fprintf(stderr, "Line: %d | %s\n", line, content);
     fprintf(stderr, "Stack pointer: %lld (stack top index)\n", vm->stackTop - vm->stack);
@@ -1438,12 +1491,12 @@ static void dumpPanicState(KTN_VM* vm) {
 
     // Call frames
     fprintf(stderr, "Frame count: %d\n", vm->frameCount);
-    for (int i = 0; i < vm->frameCount && i < FRAMES_MAX; i++) {
+    for (int i = 0; i < vm->frameCount && i < MAX_FRAMES; i++) {
         KTN_CallFrame* frame = &vm->frames[i];
         fprintf(stderr, "Frame %d: ", i);
         if (frame->closure && frame->closure->function) {
             KTN_ObjShiki* func = frame->closure->function;
-            fprintf(stderr, "%s (ip=%d)", 
+            fprintf(stderr, "%s (ip=%d)",
                 func->name ? func->name->chars : "<script>",
                 (int)(frame->ip - func->chunk.code));
         } else {
@@ -1461,7 +1514,7 @@ static void dumpPanicState(KTN_VM* vm) {
 
     // Error frames
     fprintf(stderr, "Error frames count: %d\n", vm->errorCount);
-    for (int i = 0; i < vm->errorCount && i < ERRORS_MAX; i++) {
+    for (int i = 0; i < vm->errorCount && i < MAX_ERRORS; i++) {
         KTN_ErrorFrame* ef = vm->errors[i];
         if (ef) {
             fprintf(stderr, "  %d: frame=%p offset=%d stackHead=%p\n",
@@ -1489,7 +1542,7 @@ void KTN_VMPanic(KTN_VM* vm, const char* format, ...) {
 
 static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
     vm->currentFrame = &vm->frames[vm->frameCount - 1];
-    
+
     #define READ_BYTE() (*vm->currentFrame->ip++)
     #define READ_CONSTANT() (vm->currentFrame->closure->function->chunk.constants.values[READ_BYTE()])
     #define READ_CONSTANT_LONG() ( \
@@ -1520,50 +1573,48 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 
     // For arithmetic operators that should preserve int type
     //  when both operands are int and the result fits in int32.
-    #define ARITH_OP(int_result_fn, float_result_fn, c_op)                          \
-    do {                                                                         \
-        KTN_Value _rhs = Peek(vm, 0);                                                \
-        KTN_Value _lhs = Peek(vm, 1);                                                \
-        if ((!IS_NUMERIC(_lhs) && !IS_BOOL(_lhs)) ||                             \
-            (!IS_NUMERIC(_rhs) && !IS_BOOL(_rhs))) {                             \
-            if (!KATANE_RUNTIME_ERROR("Operands must be numbers.",               \
-                COLOR_MAGENTA "Nyaa~" COLOR_RESET " Only numbers here~ ♡"))      \
-                return RUNTIME_ERROR(NULL_VALUE);                                \
-            break;                                                               \
-        }                                                                        \
-        PopN(vm, 2);                                                             \
-        if (IS_INT(_lhs) && IS_INT(_rhs)) {                                      \
-            int64_t _a = (int64_t)AS_INT(_lhs);                                  \
-            int64_t _b = (int64_t)AS_INT(_rhs);                                  \
-            int64_t _r = _a c_op _b;                                             \
-            if (_r >= INT32_MIN && _r <= INT32_MAX)                              \
-                Push(vm, int_result_fn((int32_t)_r));                            \
-            else                                                                 \
-                Push(vm, float_result_fn((double)_r));                           \
-        } else {                                                                 \
-            double _a = AS_NUMERIC(_lhs);                                        \
-            double _b = AS_NUMERIC(_rhs);                                        \
-            Push(vm, float_result_fn(_a c_op _b));                               \
-        }                                                                        \
+    #define ARITH_OP(int_result_fn, float_result_fn, c_op)                         \
+    do {                                                                        \
+        if ((!IS_NUMERIC(Peek(vm, 0)) && !IS_BOOL(Peek(vm, 0))) ||             \
+            (!IS_NUMERIC(Peek(vm, 1)) && !IS_BOOL(Peek(vm, 1)))) {             \
+            if (!KATANE_RUNTIME_ERROR("Operands are of invalid types.",               \
+                COLOR_MAGENTA "Nyaa~" COLOR_RESET " Your inputs are of invalid types here~ ♡"))     \
+                return RUNTIME_ERROR(NULL_VALUE);                               \
+            break;                                                              \
+        }                                                                       \
+        KTN_Value first = Pop(vm);   /* right operand (top) */                  \
+        KTN_Value second = Pop(vm);  /* left operand  */                        \
+        if (IS_INT(second) && IS_INT(first)) {                                  \
+            int64_t a = (int64_t)AS_INT(second);                                \
+            int64_t b = (int64_t)AS_INT(first);                                 \
+            int64_t r = a c_op b;                                               \
+            if (r >= INT32_MIN && r <= INT32_MAX)                               \
+                Push(vm, int_result_fn((int32_t)r));                            \
+            else                                                                \
+                Push(vm, float_result_fn((double)r));                           \
+        } else {                                                                \
+            double a = IS_BOOL(second) ? (double)AS_BOOL(second) : AS_NUMERIC(second); \
+            double b = IS_BOOL(first)  ? (double)AS_BOOL(first)  : AS_NUMERIC(first);  \
+            Push(vm, float_result_fn(a c_op b));                                \
+        }                                                                       \
     } while (false)
 
     // Comparison ops always produce bool so we keep the existing BINARY_OP for those,
     // but updated to use IS_NUMERIC / AS_NUMERIC:
-    #define COMPARE_OP(c_op)                                                         \
-    do {                                                                         \
-        KTN_Value _rhs = Peek(vm, 0);                                                \
-        KTN_Value _lhs = Peek(vm, 1);                                                \
-        if ((!IS_NUMERIC(_lhs) && !IS_BOOL(_lhs)) ||                             \
-            (!IS_NUMERIC(_rhs) && !IS_BOOL(_rhs))) {                             \
+    #define COMPARE_OP(c_op)                                                        \
+    do {                                                                        \
+        if ((!IS_NUMERIC(Peek(vm, 0)) && !IS_BOOL(Peek(vm, 0))) ||             \
+            (!IS_NUMERIC(Peek(vm, 1)) && !IS_BOOL(Peek(vm, 1)))) {             \
             if (!KATANE_RUNTIME_ERROR("Operands must be numbers.",               \
-                COLOR_MAGENTA "Nyaa~" COLOR_RESET " Numbers only~ ♡"))           \
-                return RUNTIME_ERROR(NULL_VALUE);                                \
-            break;                                                               \
-        }                                                                        \
-        double _a = AS_NUMERIC(_lhs);                                            \
-        double _b = AS_NUMERIC(_rhs);                                            \
-        PopN(vm, 2);                                                             \
-        Push(vm, BOOL_VALUE(_a c_op _b));                                        \
+                COLOR_MAGENTA "Nyaa~" COLOR_RESET " Only numbers here~ ♡"))     \
+                return RUNTIME_ERROR(NULL_VALUE);                               \
+            break;                                                              \
+        }                                                                       \
+        KTN_Value first = Pop(vm);   /* right operand */                        \
+        KTN_Value second = Pop(vm);  /* left operand  */                        \
+        double a = IS_BOOL(second) ? (double)AS_BOOL(second) : AS_NUMERIC(second); \
+        double b = IS_BOOL(first)  ? (double)AS_BOOL(first)  : AS_NUMERIC(first);  \
+        Push(vm, BOOL_VALUE(a c_op b));                                         \
     } while (false)
 
     for (;;) {
@@ -1632,12 +1683,12 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     KTN_ObjTypeDescriptor* descriptor = AS_TYPE_DESCRIPTOR(typeDescriptor);
                     if (!KTN_TypeDescriptorCheck(vm, Peek(vm, 0), descriptor)) {
                         char expectedBuffer[256];
-                        
+
                         KTN_TypeDescriptorFormat(descriptor, expectedBuffer, sizeof(expectedBuffer));
-                        
-                        if (!ThrowTypeError(vm, expectedBuffer, ValueTypeName(Peek(vm, 0)), "Global variable type error"))
+
+                        if (!KTN_ThrowTypeError(vm, expectedBuffer, KTN_ValueTypeName(Peek(vm, 0)), "Global variable type error"))
                             return RUNTIME_ERROR(NULL_VALUE);
-                        
+
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
                         break;
                     }
@@ -1660,7 +1711,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             case OP_SET_GLOBAL: {
                 KTN_ObjString* name = READ_STRING();
                 uint8_t flags = TableGetFlags(&vm->globals, name);
-                
+
                 if (flags & KTN_TABLE_ENTRY_CONST) {
                     if (!ThrowException(vm, "AccessError", false, "Cannot assign to const mochi \"%s\".", name->chars))
                         return RUNTIME_ERROR(NULL_VALUE);
@@ -1689,12 +1740,12 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     KTN_ObjTypeDescriptor* descriptor = AS_TYPE_DESCRIPTOR(typeDescriptor);
                     if (!KTN_TypeDescriptorCheck(vm, value, descriptor)) {
                         char expectedBuffer[256];
-                        
+
                         KTN_TypeDescriptorFormat(descriptor, expectedBuffer, sizeof(expectedBuffer));
-                        
-                        if (!ThrowTypeError(vm, expectedBuffer, ValueTypeName(value), "Global variable type error"))
+
+                        if (!KTN_ThrowTypeError(vm, expectedBuffer, KTN_ValueTypeName(value), "Global variable type error"))
                             return RUNTIME_ERROR(NULL_VALUE);
-                        
+
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
                         break;
                     }
@@ -1726,12 +1777,12 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     KTN_ObjTypeDescriptor* descriptor = AS_TYPE_DESCRIPTOR(typeDescriptor);
                     if (!KTN_TypeDescriptorCheck(vm, value, descriptor)) {
                         char expectedBuffer[256];
-                        
+
                         KTN_TypeDescriptorFormat(descriptor, expectedBuffer, sizeof(expectedBuffer));
-                        
-                        if (!ThrowTypeError(vm, expectedBuffer, ValueTypeName(value), "Local variable type error"))
+
+                        if (!KTN_ThrowTypeError(vm, expectedBuffer, KTN_ValueTypeName(value), "Local variable type error"))
                             return RUNTIME_ERROR(NULL_VALUE);
-                        
+
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
                         break;
                     }
@@ -1750,9 +1801,9 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     if (!KATANE_RUNTIME_ERROR("Cannot access the index of a non-object.", COLOR_MAGENTA "Ara ara~" COLOR_RESET " Only my special fluffy objects get to be indexed... what are you trying to poke at, silly~? ♡"))
                         return RUNTIME_ERROR(NULL_VALUE);
                 }
-                
+
                 KTN_Value value = Peek(vm, 0);
-                
+
                 switch(OBJECT_TYPE(Peek(vm, 2))) {
                     case OBJ_ARRAY: {
                         KTN_ObjArray* array = AS_ARRAY(Peek(vm, 2));
@@ -1760,15 +1811,14 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                         if (!KTN_ArraySet(vm, array, Peek(vm, 1), value)) {
                             if (!KATANE_RUNTIME_ERROR("Invalid array setting.", COLOR_MAGENTA "Ehehe~" COLOR_RESET " That's not how you stroke my array, darling~ You're poking in the wrong spot... be gentler next time~ ♡")) return RUNTIME_ERROR(NULL_VALUE);
                         }
-                        
+
                         break;
                     }
 
                     case OBJ_MAP: {
                         KTN_ObjMap* map = AS_MAP(Peek(vm, 2));
-                        if (!KTN_HashMapSet(vm, &map->map, Peek(vm, 1), value)) {
-                            if (!KATANE_RUNTIME_ERROR("Invalid map setting.", COLOR_MAGENTA "Ehehe~" COLOR_RESET " That's not how you stroke my map, darling~ You're poking in the wrong spot... be gentler next time~ ♡")) return RUNTIME_ERROR(NULL_VALUE);
-                        }
+                        KTN_HashMapSet(vm, &map->map, Peek(vm, 1), value);
+                        // if (!KATANE_RUNTIME_ERROR("Invalid map setting.", COLOR_MAGENTA "Ehehe~" COLOR_RESET " That's not how you stroke my map, darling~ You're poking in the wrong spot... be gentler next time~ ♡")) return RUNTIME_ERROR(NULL_VALUE);
                         break;
                     }
 
@@ -1778,7 +1828,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                         break;
                     }
                 }
-                
+
                 PopN(vm, 3);    // We pop out the value, the index and the list from the stack.
                 Push(vm, value);
                 break;
@@ -1848,7 +1898,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             }
             case OP_GET_INDEX_RANGED: {
                 if (!IS_OBJECT(Peek(vm, 3))) {
-                    RuntimeError(vm, "Cannot access the indexes of a non-object.");
+                    KTN_RuntimeError(vm, "Cannot access the indexes of a non-object.");
                     return RUNTIME_ERROR(NULL_VALUE);
                 }
 
@@ -1915,7 +1965,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 
                     TableSetFlagged(vm, &kata->staticProperties, name, Peek(vm, 0), flags);
                     TableSet(vm, &kata->staticFieldTypes, name, typeDescriptor);
-                    
+
                     Pop(vm);
                     break;
                 }
@@ -1927,7 +1977,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 
                 TableSet(vm, &kata->fieldTypes, name, typeDescriptor);
                 TableSetFlagged(vm, &kata->properties, name, Peek(vm, 0), flags);
-                
+
                 kata->hasTypedFields = true;
                 Pop(vm);
                 break;
@@ -1940,7 +1990,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 if (IS_CLASS(Peek(vm, 1))) {
                     KTN_ObjKata* kata = AS_CLASS(Peek(vm, 1));
                     KTN_ObjString* name = READ_STRING();
-                    
+
                     if (TableContains(&kata->staticProperties, name)) {
                         KTN_Value currentValue;
                         uint8_t flags = TableGetFlags(&kata->staticProperties, name);
@@ -1956,19 +2006,19 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                             break;
 
                         if (kata->hasTypedFields) {
-                            KTN_Value typeDescriptor;   
+                            KTN_Value typeDescriptor;
 
                             if (TableGet(&kata->staticFieldTypes, name, &typeDescriptor) && IS_TYPE_DESCRIPTOR(typeDescriptor)) {
                                 KTN_ObjTypeDescriptor* descriptor = AS_TYPE_DESCRIPTOR(typeDescriptor);
 
                                 if (!KTN_TypeDescriptorCheck(vm, Peek(vm, 0), descriptor)) {
                                     char expectedBuffer[256];
-                            
+
                                     KTN_TypeDescriptorFormat(descriptor, expectedBuffer, sizeof(expectedBuffer));
-                                    
-                                    if (!ThrowTypeError(vm, expectedBuffer, ValueTypeName(Peek(vm, 0)), "Local variable type error"))
+
+                                    if (!KTN_ThrowTypeError(vm, expectedBuffer, KTN_ValueTypeName(Peek(vm, 0)), "Local variable type error"))
                                         return RUNTIME_ERROR(NULL_VALUE);
-                                    
+
                                     vm->currentFrame = &vm->frames[vm->frameCount - 1];
                                     break;
                                 }
@@ -1984,7 +2034,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     }
 
                     KTN_Value value;
-                
+
                     if (!TableGet(&kata->staticMethods, name, &value)) {
                         if (!ThrowException(vm, "PropertyError", false, "Kata \"%s\" has no static member \"%s\".", kata->className->chars, name->chars))
                             return RUNTIME_ERROR(NULL_VALUE);
@@ -2035,24 +2085,24 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     finalStatus = CanAssignFinalProperty(vm, Peek(vm, 1), currentValue, flags, string, false);
                     if (finalStatus == FINAL_WRITE_FAILED)
                         return RUNTIME_ERROR(NULL_VALUE);
-                        
+
                     if (finalStatus == FINAL_WRITE_BLOCKED)
                         break;
 
                     if (instance->kata->hasTypedFields) {
-                        KTN_Value typeDescriptor;   
+                        KTN_Value typeDescriptor;
 
                         if (TableGet(&instance->kata->fieldTypes, string, &typeDescriptor) && IS_TYPE_DESCRIPTOR(typeDescriptor)) {
                             KTN_ObjTypeDescriptor* descriptor = AS_TYPE_DESCRIPTOR(typeDescriptor);
 
                             if (!KTN_TypeDescriptorCheck(vm, Peek(vm, 0), descriptor)) {
                                 char expectedBuffer[256];
-                        
+
                                 KTN_TypeDescriptorFormat(descriptor, expectedBuffer, sizeof(expectedBuffer));
-                                
-                                if (!ThrowTypeError(vm, expectedBuffer, ValueTypeName(Peek(vm, 0)), "Local variable type error"))
+
+                                if (!KTN_ThrowTypeError(vm, expectedBuffer, KTN_ValueTypeName(Peek(vm, 0)), "Local variable type error"))
                                     return RUNTIME_ERROR(NULL_VALUE);
-                                
+
                                 vm->currentFrame = &vm->frames[vm->frameCount - 1];
                                 break;
                             }
@@ -2091,7 +2141,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 
                     return RUNTIME_ERROR(NULL_VALUE);
                 }
-                
+
                 vm->currentFrame = &vm->frames[vm->frameCount - 1];
                 break;
             }
@@ -2108,7 +2158,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     // Similarly, because, in the case of a method, the method would be static, there is no instance to bind to, and thus we are set.
                     if (TableGet(&kata->staticProperties, name, &value) || TableGet(&kata->staticMethods, name, &value)) {
                         KTN_Value isHidden;
-                        
+
                         if (!CanAccessMember(vm, kata, name, &isHidden)) {
                             if (AS_BOOL(isHidden)) {
                                 if (!ThrowException(vm, "PropertyError", false, "Kata \"%s\" has no static member \"%s\".", kata->className->chars, name->chars))
@@ -2200,7 +2250,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 KTN_Value b = Pop(vm);
                 KTN_Value a = Pop(vm);
                 Push(vm, BOOL_VALUE(ValuesEqual(a, b)));
-                break;   
+                break;
             }
             case OP_NOT_EQUAL: {
                 KTN_Value b = Pop(vm);
@@ -2215,7 +2265,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 KTN_Value a = Peek(vm, 1);
 
                 bool valuesAreEqual = ValuesEqual(a, b);
-                
+
                 if (valuesAreEqual) {
                     Pop(vm);
                     Pop(vm);
@@ -2266,7 +2316,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     Concatenate(vm);
                     break;
                 }
-                
+
                 ARITH_OP(INT_VALUE, DOUBLE_VALUE, +);
                 break;
             }
@@ -2284,13 +2334,13 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 
                 double b = AS_NUMERIC(rhs);
                 double a = AS_NUMERIC(lhs);
-                
+
                 if (b == 0) {
                     if (!KATANE_RUNTIME_ERROR("Integer division by zero.",
                         COLOR_MAGENTA "Eep~" COLOR_RESET " Can't divide by zero~ ♡")) return RUNTIME_ERROR(NULL_VALUE);
                     break;
                 }
-                
+
                 PopN(vm, 2);
                 Push(vm, DOUBLE_VALUE(a / b));
                 break;
@@ -2312,9 +2362,9 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                             COLOR_MAGENTA "Eep~" COLOR_RESET " Can't divide by zero~ ♡")) return RUNTIME_ERROR(NULL_VALUE);
                         break;
                     }
-                    
+
                     int32_t q = a / b;
-                    
+
                     if ((a % b) != 0 && ((a ^ b) < 0)) q -= 1;
 
                     PopN(vm, 2);
@@ -2369,7 +2419,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     } else {
                         double a = (double)AS_INT(lhs);
                         double b = (double)AS_INT(rhs);
-                        
+
                         PopN(vm, 2);
                         Push(vm, DOUBLE_VALUE(pow(a, b)));
                     }
@@ -2436,7 +2486,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 KTN_Value rhs = Peek(vm, 0);
                 KTN_Value lhs = Peek(vm, 1);
                 if (!IS_NUMERIC(rhs) || !IS_NUMERIC(lhs)) {
-                    if (!KATANE_RUNTIME_ERROR("Operands must be numbers.", 
+                    if (!KATANE_RUNTIME_ERROR("Operands must be numbers.",
                         COLOR_MAGENTA "Nyaa~" COLOR_RESET " Modulo only plays with numbers~ ♡")) return RUNTIME_ERROR(NULL_VALUE);
                     break;
                 }
@@ -2447,12 +2497,12 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                             COLOR_MAGENTA "Eep~" COLOR_RESET " Can't mod by zero~ ♡")) return RUNTIME_ERROR(NULL_VALUE);
                         break;
                     }
-                    
+
                     int32_t a = AS_INT(lhs);
                     int32_t r = a % b;
 
                     if (r != 0 && ((r ^ b) < 0)) r += b;
-                    
+
                     PopN(vm, 2);
                     Push(vm, INT_VALUE(r));
                 } else {
@@ -2472,7 +2522,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                         return RUNTIME_ERROR(NULL_VALUE);
                     break;
                 }
-                
+
                 int32_t a = (int32_t)(int64_t)AS_NUMERIC(lhs);
                 int32_t b = (int32_t)(int64_t)AS_NUMERIC(rhs);
                 PopN(vm, 2);
@@ -2497,12 +2547,13 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 KTN_Value rhs = Peek(vm, 0);
                 KTN_Value lhs = Peek(vm, 1);
                 if (!IS_NUMERIC(rhs) || !IS_NUMERIC(lhs)) {
-                    if (!KATANE_RUNTIME_ERROR("Operands to ^ must be integers.", COLOR_MAGENTA "Nyaa~" COLOR_RESET " XOR only for integers~ ♡")) 
+                    if (!KATANE_RUNTIME_ERROR("Operands to ^ must be integers.", COLOR_MAGENTA "Nyaa~" COLOR_RESET " XOR only for integers~ ♡"))
                         return RUNTIME_ERROR(NULL_VALUE);
                     break;
                 }
                 int32_t a = (int32_t)(int64_t)AS_NUMERIC(lhs);
                 int32_t b = (int32_t)(int64_t)AS_NUMERIC(rhs);
+
                 PopN(vm, 2);
                 Push(vm, INT_VALUE(a ^ b));
                 break;
@@ -2519,7 +2570,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 Push(vm, INT_VALUE(~a));
                 break;
             }
-            
+
             case OP_SHIFT_LEFT: {
                 KTN_Value right = Peek(vm, 0);
                 KTN_Value left = Peek(vm, 1);
@@ -2641,7 +2692,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     if (!IS_CLOSURE(sokata->constructor)) {
                         if (!KATANE_RUNTIME_ERROR("Cannot call super since sokata has no constructor", COLOR_MAGENTA "Ara ara~" COLOR_RESET " 'super' call failed: missing constructor~!")) return RUNTIME_ERROR(NULL_VALUE);
                     }
-                    
+
                     if (!Call(vm, AS_CLOSURE(sokata->constructor), argumentCount, sokata)) {
                         return RUNTIME_ERROR(NULL_VALUE);
                     }
@@ -2692,7 +2743,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 int numOfItems = numOfPairs * 2;
 
                 KTN_ObjMap* map = MapNew(vm);
-                
+
                 vm->stackTop[-numOfItems - 1] = OBJECT_VALUE(map);
 
                 for (int i = numOfItems - 1; i >= 0; i -= 2) {
@@ -2705,6 +2756,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 PopN(vm, numOfPairs * 2);
                 break;
             }
+
             case OP_CLASS: {
                 Push(vm, OBJECT_VALUE(KataNew(vm, READ_STRING())));
                 break;
@@ -2750,58 +2802,80 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 break;
             }
             case OP_CLOSE_UPVALUE: {
-                CloseUpvalues(vm, vm->stackTop - 1);
+                KTN_CloseUpvalues(vm, vm->stackTop - 1);
                 Pop(vm);
                 break;
             }
             case OP_RETURN: {
-                KTN_Value result = Pop(vm);
-                CloseUpvalues(vm, vm->currentFrame->slots);
+                KTN_InterpretResult result = DoReturn(vm, exitFrame);
 
-                int returnDescriptor = vm->currentFrame->closure->function->returnTypeDescriptor;
+                if (result.status == INTERPRET_OK && vm->frameCount > exitFrame)
+                    break;
 
-                if (returnDescriptor >= 0) {
-                    KTN_Value typeDescriptorValue = vm->currentFrame->closure->function->chunk.constants.values[returnDescriptor];
-                    
-                    if (IS_TYPE_DESCRIPTOR(typeDescriptorValue)) {
-                        KTN_ObjTypeDescriptor* descriptor = AS_TYPE_DESCRIPTOR(typeDescriptorValue);
+                return result;
+            }
 
-                        if (!KTN_TypeDescriptorCheck(vm, result, descriptor)) {
-                            char expectedBuffer[256];
-                        
-                            KTN_TypeDescriptorFormat(descriptor, expectedBuffer, sizeof(expectedBuffer));
-                        
-                            if (!ThrowTypeError(vm, expectedBuffer, ValueTypeName(result), "Return type error"))
-                                return RUNTIME_ERROR(NULL_VALUE);
-                        
-                            vm->currentFrame = &vm->frames[vm->frameCount - 1];
-                            break;
-                        }
-                    }
+            case OP_DEFER_ACTION: {
+                uint8_t type = READ_BYTE();
+                uint8_t targetScopeDepth = READ_BYTE();
+
+                KTN_Value returnValue = NULL_VALUE;
+                uint8_t* jumpTarget = NULL;
+
+                // 0x00: Return, 0x01: Jump forwards, 0x02: Jump backwards.
+                if (type == 0x00) {
+                    returnValue = Pop(vm);
+                } else {
+                    uint16_t offset = READ_SHORT();
+                    jumpTarget = (type == 0x01) ? vm->currentFrame->ip + offset : vm->currentFrame->ip - offset;
                 }
 
-                // Free all catch frames that belong to this call frame (handles early returns).
+                bool shouldBreak = false;
+
                 while (vm->errorCount > 0 && vm->errors[vm->errorCount - 1]->frame == vm->currentFrame) {
-                    KTN_ErrorFrame* errorFrame = ErrorPop(vm);
+                    KTN_ErrorFrame* errorFrame = vm->errors[vm->errorCount - 1];
+
+                    if (errorFrame->catchScopeDepth <= (int)targetScopeDepth) {
+                        break;
+                    }
+
+                    if (errorFrame->finallyTarget != NULL && errorFrame->state != KTN_EF_IN_FINALLY) {
+                        errorFrame->state = KTN_EF_IN_FINALLY;
+                        errorFrame->targetScopeDepth = (int)targetScopeDepth;
+
+                        if (type == 0x00) {
+                            errorFrame->deferredAction = KTN_DEFERRED_RETURN;
+                            errorFrame->deferredValue = returnValue;
+                        } else {
+                            errorFrame->deferredAction = KTN_DEFERRED_JUMP;
+                            errorFrame->deferredJumpTarget = jumpTarget;
+                        }
+
+                        KTN_CloseUpvalues(vm, errorFrame->stackHead);
+                        vm->stackTop = errorFrame->stackHead;
+                        vm->currentFrame->ip = errorFrame->finallyTarget;
+
+                        shouldBreak = true;
+                        break;
+                    }
+
+                    ErrorPop(vm);
                     free(errorFrame);
                 }
 
-                vm->frameCount--;
+                if (shouldBreak) break;
 
-                if (vm->frameCount == 0) {
-                    KTN_InterpretResult interpretResult = RUNTIME_OK(vm->finalResult);    
-                    PopN(vm, 2);
-                    return interpretResult;
+                if (type == 0x00) {
+                    Push(vm, returnValue);
+                    KTN_InterpretResult result = DoReturn(vm, exitFrame);
+
+                    if (result.status == INTERPRET_OK && vm->frameCount > exitFrame)
+                        break;
+
+                    return result;
                 }
 
-                vm->stackTop = vm->currentFrame->slots;
-                Push(vm, result);
-
-                vm->currentFrame = &vm->frames[vm->frameCount - 1];
-                
-                if (vm->frameCount == exitFrame) {
-                    return RUNTIME_OK(vm->finalResult);
-                }
+                vm->currentFrame->ip = jumpTarget;
                 break;
             }
 
@@ -2818,7 +2892,11 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             case OP_EJECT_NATIVE_IMPORT:    { break; }
 
             case OP_BEGIN_CATCH: {
-                uint16_t offset = READ_SHORT();
+                uint16_t catchOffset = READ_SHORT();
+                uint8_t* catchBase = vm->currentFrame->ip;
+                uint16_t finallyOffset = READ_SHORT();
+                uint8_t* finallyBase = vm->currentFrame->ip;
+
                 KTN_ErrorFrame* errorFrame = malloc(sizeof(KTN_ErrorFrame));
 
                 if (errorFrame == NULL) {
@@ -2827,8 +2905,17 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 }
 
                 errorFrame->frame = vm->currentFrame;
-                errorFrame->offset = (uint16_t)(vm->currentFrame->ip + offset - vm->currentFrame->closure->function->chunk.code);
+                errorFrame->catchTarget = (catchBase + catchOffset);
+                errorFrame->finallyTarget = (finallyOffset == 0) ? NULL : (finallyBase + finallyOffset);
                 errorFrame->stackHead = vm->stackTop;
+                errorFrame->catchScopeDepth = 0;
+                errorFrame->state = KTN_EF_WAITING;
+
+                errorFrame->deferredAction = KTN_DEFERRED_NONE;
+                errorFrame->deferredValue = NULL_VALUE;
+                errorFrame->deferredJumpTarget = NULL;
+                errorFrame->targetScopeDepth = 0;
+
                 errorFrame->value = NULL_VALUE;
 
                 ErrorPush(vm, errorFrame);
@@ -2836,30 +2923,14 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             }
 
             case OP_END_CATCH: {
-                if (vm->errorCount > 0 && vm->errors[vm->errorCount - 1]->frame == vm->currentFrame) {
+                if (
+                    vm->errorCount > 0 &&
+                    vm->errors[vm->errorCount - 1]->frame == vm->currentFrame &&
+                    vm->errors[vm->errorCount - 1]->state != KTN_EF_IN_FINALLY
+                ) {
                     KTN_ErrorFrame* errorFrame = ErrorPop(vm);
                     free(errorFrame);
                 }
-                break;
-            }
-
-            case OP_BEGIN_FINALLY: {
-                KTN_VMPanic(vm, "OP_BEGIN_FINALLY not yet implemented...");
-
-                uint16_t offset = READ_SHORT();
-                KTN_ErrorFrame* errorFrame = ALLOCATE(KTN_ErrorFrame, 1);
-                
-                if (errorFrame == NULL) {
-                    fprintf(stderr, "[FATAL] Out of memory allocating catch frame.\n");
-                    exit(1);
-                }
-
-                errorFrame->frame = vm->currentFrame;
-                errorFrame->offset = offset;
-                errorFrame->stackHead = vm->stackTop;
-                errorFrame->value = NULL_VALUE;
-
-                ErrorPush(vm, errorFrame);
                 break;
             }
 
@@ -2877,17 +2948,18 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 KTN_Value thrownValue = vm->pendingException;
                 vm->pendingException = NULL_VALUE;
 
-                if (!ThrowValue(vm, AS_INSTANCE(thrownValue)))
+                if (!KTN_ThrowValue(vm, AS_INSTANCE(thrownValue), true))
                     return RUNTIME_ERROR(NULL_VALUE);
 
                 break;
             }
 
             case OP_RAISE: {
+                bool buildTrace = (bool)READ_BYTE();
                 KTN_Value thrownValue = Pop(vm);
 
                 if (!IS_INSTANCE(thrownValue)) {
-                    if (!RuntimeError(vm, "Ohoho~! You can only throw instances of Exception subclasses, not whatever that was~ ♡"))
+                    if (!KTN_RuntimeError(vm, "Ohoho~! You can only throw instances of Exception subclasses, not whatever that was~ ♡"))
                         return RUNTIME_ERROR(NULL_VALUE);
                     vm->currentFrame = &vm->frames[vm->frameCount - 1];
                     break;
@@ -2895,14 +2967,14 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 
                 KTN_ObjInstance* thrownInstance = AS_INSTANCE(thrownValue);
                 if (vm->exceptionClass != NULL && !IsInstanceOfKata(thrownInstance->kata, vm->exceptionClass)) {
-                    if (!RuntimeError(vm, "Tsk~! \"%s\" does not inherit from Exception and cannot be thrown.", thrownInstance->kata->className->chars))
+                    if (!KTN_RuntimeError(vm, "Tsk~! \"%s\" does not inherit from Exception and cannot be thrown.", thrownInstance->kata->className->chars))
                         return RUNTIME_ERROR(NULL_VALUE);
 
                     vm->currentFrame = &vm->frames[vm->frameCount - 1];
                     break;
                 }
 
-                if (!ThrowValue(vm, thrownInstance))
+                if (!KTN_ThrowValue(vm, thrownInstance, buildTrace))
                     return RUNTIME_ERROR(NULL_VALUE);
 
                 vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -2921,7 +2993,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 vm->caughtException = false;
                 KTN_Value thrownInstance = Pop(vm);
 
-                if (!ThrowValue(vm, AS_INSTANCE(thrownInstance)))
+                if (!KTN_ThrowValue(vm, AS_INSTANCE(thrownInstance), true))
                     return RUNTIME_ERROR(NULL_VALUE);
 
                 vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -2941,40 +3013,32 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     }
 
                     Push(vm, OBJECT_VALUE(messageString));
-                    KTN_ObjInstance* assertion = ExceptionCreate(vm, "AssertionError", messageString);
+                    KTN_ObjInstance* assertion = KTN_ExceptionCreate(vm, "AssertionError", messageString);
                     Pop(vm);
-                    
-                    if (!ThrowValue(vm, assertion))
+
+                    if (!KTN_ThrowValue(vm, assertion, true))
                         return RUNTIME_ERROR(NULL_VALUE);
-                    
+
                     vm->currentFrame = &vm->frames[vm->frameCount - 1];
                 }
                 break;
             }
 
             case OP_INSTANCEOF: {
-                KTN_Value classNameValue = READ_CONSTANT_LONG();
-                KTN_Value target = Pop(vm);
+                KTN_Value classValue = Peek(vm, 0);
+                KTN_Value target = Peek(vm, 1);
 
-                if (!IS_STRING(classNameValue)) {
+                if (!IS_CLASS(classValue)) {
+                    PopN(vm, 2);
                     Push(vm, BOOL_VALUE(false));
                     break;
                 }
-
-                KTN_ObjString* className = AS_STRING(classNameValue);
-                KTN_Value classValue;
-                if (!TableGet(&vm->globals, className, &classValue) || !IS_CLASS(classValue)) {
-                    Push(vm, BOOL_VALUE(false));
-                    break;
-                }
-
+                
                 KTN_ObjKata* targetClass = AS_CLASS(classValue);
-                if (!IS_INSTANCE(target)) {
-                    Push(vm, BOOL_VALUE(false));
-                    break;
-                }
+                KTN_ObjKata* instanceClass = (IS_INSTANCE(target)) ? AS_INSTANCE(target)->kata : PrimitiveClassOf(vm, target);
 
-                Push(vm, BOOL_VALUE(IsInstanceOfKata(AS_INSTANCE(target)->kata, targetClass)));
+                PopN(vm, 2);
+                Push(vm, BOOL_VALUE(IsInstanceOfKata(instanceClass, targetClass)));
                 break;
             }
 
@@ -3009,10 +3073,10 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                         char expectedBuffer[256];
 
                         KTN_TypeDescriptorFormat(descriptor, expectedBuffer, sizeof(expectedBuffer));
-                        
-                        if (!ThrowTypeError(vm, expectedBuffer, ValueTypeName(argument), "Parameter type error"))
+
+                        if (!KTN_ThrowTypeError(vm, expectedBuffer, KTN_ValueTypeName(argument), "Parameter type error"))
                             return RUNTIME_ERROR(NULL_VALUE);
-                        
+
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
                         break;
                     }
@@ -3030,11 +3094,11 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 KTN_Value topValue = Peek(vm, 0);
 
                 if (!KTN_TypeDescriptorCheck(vm, topValue, descriptor)) {
-                    char expectedBuffer[256];   
+                    char expectedBuffer[256];
 
                     KTN_TypeDescriptorFormat(descriptor, expectedBuffer, sizeof(expectedBuffer));
-                    
-                    if (!ThrowTypeError(vm, expectedBuffer, ValueTypeName(topValue), "Type error"))
+
+                    if (!KTN_ThrowTypeError(vm, expectedBuffer, KTN_ValueTypeName(topValue), "Type error"))
                         return RUNTIME_ERROR(NULL_VALUE);
 
                     vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3082,12 +3146,12 @@ void registerRoot(KTN_VM* vm) {
 
 KTN_InterpretResult KTN_Interpret(KTN_VM* vm, KTN_ObjModule* module, const char* source) {
     vm->finalResult = NULL_VALUE;
-    
+
     Push(vm, OBJECT_VALUE(module));
 
     if (vm->exceptionClass == NULL)
         KTN_InitializeExceptions(vm, module);
-    
+
     KTN_TypeDescriptorPreResolvePrimitives(vm);
 
     KTN_ObjShiki* function = KTN_Compile(vm, source);

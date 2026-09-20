@@ -42,8 +42,8 @@ void KTN_DLClose(KTN_DLHandle handle) {
 }
 
 bool KTN_FileExists(const char* path) {
-    struct KTN_STAT stat;
-    return (KTN_STAT(path, &stat) == 0);
+    struct KTN_STAT st;
+    return (KTN_STAT(path, &st) == 0);
 }
 
 char* KTN_FileRead(const char* path, size_t* size) {
@@ -115,19 +115,19 @@ bool KTN_FileWrite(const char* path, const void* data, size_t size) {
 }
 
 int KTN_IsDirectory(const char* path) {
-    struct KTN_STAT stat;
+    struct KTN_STAT st;
 
-    if (KTN_STAT(path, &stat) != 0)
+    if (KTN_STAT(path, &st) != 0)
         return 0;
 
 #ifdef _WIN32
-    return (stat.st_mode & _S_IFDIR) != 0;
+    return (st.st_mode & _S_IFDIR) != 0;
 #else
-    return S_ISDIR(stat.st_mode);
+    return S_ISDIR(st.st_mode);
 #endif
 }
 
-#undef _WIN32
+//#undef _WIN32
 
 /// @brief Returns a new temporary path (without trailing slash)
 /// @param buffer Buffer where to store the path.

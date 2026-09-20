@@ -59,6 +59,7 @@ typedef enum {
     TOKEN_OR,
     TOKEN_FUNCTION,
     TOKEN_CLASS,
+    TOKEN_TYPE,
     TOKEN_IF,
     TOKEN_ELSE,
     TOKEN_TRUE,

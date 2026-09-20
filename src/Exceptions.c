@@ -4,6 +4,41 @@
 #include "Native.h"
 #include "Primitives.h"
 
+static KTN_ObjKata* ExceptionGet(KTN_VM* vm, const char* name) {
+    if (name == NULL) {
+        return vm->exceptionClass;
+    }
+
+    KTN_Value exceptionClass;
+    if (TableGet(&vm->globals, STRING_COPY(name), &exceptionClass) && IS_CLASS(exceptionClass)) {
+        return AS_CLASS(exceptionClass);
+    }
+
+    return vm->exceptionClass;
+}
+
+KTN_ObjInstance* KTN_ExceptionCreate(KTN_VM* vm, const char* type, KTN_ObjString* message) {
+    KTN_ObjInstance* instance = InstanceNew(vm, ExceptionGet(vm, type));
+    Push(vm, OBJECT_VALUE(instance));
+    TableSet(vm, &instance->properties, KTN_NAME(vm, KTN_NAME_MESSAGE), OBJECT_VALUE(message));
+    Pop(vm);
+    return instance;
+}
+
+const char* KTN_ValueTypeName(KTN_Value value) {
+    if (IS_INT(value))         return "Int";
+    if (IS_DOUBLE(value))      return "Float";
+    if (IS_BOOL(value))        return "Bool";
+    if (IS_NULL(value))        return "Null";
+    if (IS_STRING(value))      return "String";
+    if (IS_INSTANCE(value))    return AS_INSTANCE(value)->kata->className->chars;
+    if (IS_CLASS(value))       return "Kata";
+    if (IS_ARRAY(value))       return "Array";
+    if (IS_MAP(value))         return "Map";
+    if (IS_CLOSURE(value) || IS_FUNCTION(value)) return "Shiki";
+    return "unknown";
+}
+
 KTN_Value BuildStackTraceObject(KTN_VM* vm, KTN_ObjInstance* stackTraceInstance) {
     KTN_ObjArray* frames = ArrayNew(vm);
     Push(vm, OBJECT_VALUE(frames));
@@ -59,9 +94,12 @@ KTN_Value BuildStackTraceObject(KTN_VM* vm, KTN_ObjInstance* stackTraceInstance)
     return Pop(vm);
 }
 
-// Exception(message?)
+// Exception(message)
 static KTN_NativeResult ExceptionConstructorNative(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    EXPECT_ARGC(1);
+    EXPECT_ARG_STRING(0);
+
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
 
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1))) {
         TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
@@ -72,14 +110,17 @@ static KTN_NativeResult ExceptionConstructorNative(KTN_VM* vm, KTN_CallArgs argu
 
 // StackTrace()
 static KTN_NativeResult StackTraceConstructorNative(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
     (void)BuildStackTraceObject(vm, self);
     RETURN_VALUE(ARG(0));
 }
 
-// TypeError(message?, expected?, actual?)
+// TypeError(message, expected, actual)
 static KTN_NativeResult TypeErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    EXPECT_ARGC(4);
+    EXPECT_ARG_STRING(1);
+
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
 
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
         TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
@@ -93,9 +134,12 @@ static KTN_NativeResult TypeErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments)
     RETURN_VALUE(ARG(0));
 }
 
-// ValueError(message?, value?)
+// ValueError(message, value)
 static KTN_NativeResult ValueErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    EXPECT_ARGC(2);
+    EXPECT_ARG_STRING(1);
+
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
         TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
@@ -103,9 +147,12 @@ static KTN_NativeResult ValueErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments
     RETURN_VALUE(ARG(0));
 }
 
-// RangeError(message?, value?, minimum?, maximum?)
+// RangeError(message, value, {minimum?, maximum?})
 static KTN_NativeResult RangeErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    EXPECT_MAX_ARGC(4);
+    EXPECT_ARG_STRING(1);
+
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
         TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
@@ -117,9 +164,9 @@ static KTN_NativeResult RangeErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments
     RETURN_VALUE(ARG(0));
 }
 
-// ArgumentError(message?, argumentName?, value?)
+// ArgumentError(message, argumentName, value)
 static KTN_NativeResult ArgumentErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
         TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
@@ -129,9 +176,9 @@ static KTN_NativeResult ArgumentErrorConstructor(KTN_VM* vm, KTN_CallArgs argume
     RETURN_VALUE(ARG(0));
 }
 
-// NumericError(message?, operation?)
+// NumericError(message, operation?)
 static KTN_NativeResult NumericErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
         TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
@@ -139,9 +186,9 @@ static KTN_NativeResult NumericErrorConstructor(KTN_VM* vm, KTN_CallArgs argumen
     RETURN_VALUE(ARG(0));
 }
 
-// AccessError(message?, target?)
+// AccessError(message, target)
 static KTN_NativeResult AccessErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
         TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
@@ -149,9 +196,9 @@ static KTN_NativeResult AccessErrorConstructor(KTN_VM* vm, KTN_CallArgs argument
     RETURN_VALUE(ARG(0));
 }
 
-// PropertyError(message?, propertyName?, target?)
+// PropertyError(message, propertyName, target)
 static KTN_NativeResult PropertyErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
         TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
@@ -161,9 +208,9 @@ static KTN_NativeResult PropertyErrorConstructor(KTN_VM* vm, KTN_CallArgs argume
     RETURN_VALUE(ARG(0));
 }
 
-// UndefinedError(message?, name?)
+// UndefinedError(message, name)
 static KTN_NativeResult UndefinedErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
         TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
@@ -171,15 +218,13 @@ static KTN_NativeResult UndefinedErrorConstructor(KTN_VM* vm, KTN_CallArgs argum
     RETURN_VALUE(ARG(0));
 }
 
-// KeyError(message?)
+// KeyError(message, key)
 static KTN_NativeResult KeyErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
-    KTN_ObjInstance* self = AS_INSTANCE(ARG(0));
+    KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
         TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
-    // Note: The original KeyError had a 'key' property, but it was never set.
-    // If you wish to set it, uncomment the following lines and adjust the signature.
-    // if (ARGUMENT_COUNT >= 3)
-    //     TableSet(vm, &self->properties, STRING_COPY("key"), ARG(2));
+    if (ARGUMENT_COUNT >= 3)
+        TableSet(vm, &self->properties, STRING_COPY("key"), ARG(2));
     RETURN_VALUE(ARG(0));
 }
 

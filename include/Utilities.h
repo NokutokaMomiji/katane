@@ -45,6 +45,6 @@ void SBAppend(StringBuilder* sb, const char* str, int length);
 void SBAppendCStr(StringBuilder* sb, const char* str);
 void SBFree(StringBuilder* sb);
 
-char* ProcessEscapes(const char* source, int sourceLength);
+char* ProcessEscapes(const char* source, int sourceLength, int* outLength);
 
 #endif

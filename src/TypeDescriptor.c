@@ -72,21 +72,6 @@ static void InternGrow(KTN_VM* vm, KTN_DescriptorSet* set) {
     set->capacity = newCapacity;
 }
 
-static bool DescriptorsEqual(const KTN_ObjTypeDescriptor* first, const KTN_ObjTypeDescriptor* second) {
-    if (first->type != second->type) return false;
-    if (first->hash != second->hash) return false;
-    if (first->name != second->name) return false;
-    if (first->base != second->base) return false;
-    if (first->argumentCount != second->argumentCount) return false;
-
-    for (int i = 0; i < first->argumentCount; i++) {
-        if (first->arguments[i] != second->arguments[i])
-            return false;
-    }
-
-    return true;
-}
-
 static KTN_ObjTypeDescriptor* InternFind(KTN_DescriptorSet* set, const KTN_ObjTypeDescriptor* probe) {
     if (set->capacity == 0)
         return NULL;
@@ -100,7 +85,7 @@ static KTN_ObjTypeDescriptor* InternFind(KTN_DescriptorSet* set, const KTN_ObjTy
         if (!slot)
             return NULL;
 
-        if (DescriptorsEqual(probe, slot))
+        if (KTN_DescriptorsEqual(probe, slot))
             return slot;
 
         index = (index + 1) & mask;
@@ -164,7 +149,7 @@ static KTN_ObjKata* ResolveNamed(KTN_VM* vm, KTN_ObjTypeDescriptor* descriptor) 
 static uint32_t TableAppend(KTN_DescriptorTable* table, KTN_ObjTypeDescriptor* descriptor) {
     if (table->count >= table->capacity) {
         int newCapacity = GROW_CAPACITY(table->capacity);
-        KTN_ObjTypeDescriptor** newItems = (KTN_ObjTypeDescriptor**)realloc(table->items, sizeof(KTN_ObjTypeDescriptor*));
+        KTN_ObjTypeDescriptor** newItems = (KTN_ObjTypeDescriptor**)realloc(table->items, sizeof(KTN_ObjTypeDescriptor*) * newCapacity);
 
         if (!newItems)
             return UINT32_MAX;
@@ -176,6 +161,21 @@ static uint32_t TableAppend(KTN_DescriptorTable* table, KTN_ObjTypeDescriptor* d
     uint32_t index = (uint32_t)table->count;
     table->items[index++] = descriptor;
     return index;
+}
+
+bool KTN_DescriptorsEqual(const KTN_ObjTypeDescriptor* first, const KTN_ObjTypeDescriptor* second) {
+    if (first->type != second->type) return false;
+    if (first->hash != second->hash) return false;
+    if (first->name != second->name) return false;
+    if (first->base != second->base) return false;
+    if (first->argumentCount != second->argumentCount) return false;
+
+    for (int i = 0; i < first->argumentCount; i++) {
+        if (first->arguments[i] != second->arguments[i])
+            return false;
+    }
+
+    return true;
 }
 
 void KTN_DescriptorSetInit(KTN_DescriptorSet *set) {

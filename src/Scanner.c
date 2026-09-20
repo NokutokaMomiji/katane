@@ -200,19 +200,38 @@ static void SkipWhitespace() {
 }
 
 static KTN_Token ScannerScanString(char stringChar) {
-    while (ScannerPeek() != stringChar && !ScannerAtEnd()) {
-        if (ScannerPeek() == '\n')
+    while (!ScannerAtEnd()) {
+        char currentPeek = ScannerPeek();
+
+        if (currentPeek == stringChar) {
+            break;
+        }
+
+        if (currentPeek == '\n') {
             scanner.line++;
-      
-        ScannerAdvance();
+        }
+
+        if (currentPeek == '\\') {
+            ScannerAdvance();
+            
+            if (ScannerAtEnd()) {
+                return TokenError("Unterminated string escape sequence.");
+            }
+            
+            ScannerAdvance();
+        } else {
+            ScannerAdvance();
+        }
     }
 
-    if (ScannerAtEnd())
+    if (ScannerAtEnd()) {
         return TokenError("Unterminated string literal.");
+    }
 
     ScannerAdvance();
     return TokenMake(TOKEN_STRING);
 }
+
 
 static KTN_Token ScannerScanNumber() {
     // Check for a base prefix (0b, 0o, 0x)
@@ -436,6 +455,9 @@ static KTN_TokenType IdentifierType() {
                         KTN_TokenType possible = CheckKeyword(2, "ue", TOKEN_TRUE);
                         if (possible != TOKEN_IDENTIFIER) return possible;
                         return CheckKeyword(2, "y", TOKEN_TRY);
+                    }
+                    case 'y': {
+                        return CheckKeyword(2, "pe", TOKEN_TYPE);
                     }
                 }
             }

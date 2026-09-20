@@ -263,6 +263,8 @@ bool KTN_HashMapSet(KTN_VM* vm, KTN_HashMap* map, KTN_Value key, KTN_Value value
     int32_t insertPrevious = -2;
     int32_t insertNext = -1;
 
+    bool newKeyAdded = false;
+
     for (;;) {
         KTN_HashEntry* entry = &map->entries[index];
 
@@ -299,7 +301,7 @@ bool KTN_HashMapSet(KTN_VM* vm, KTN_HashMap* map, KTN_Value key, KTN_Value value
                 else
                     map->orderTail = (int32_t)index;
                 
-                return false;
+                return newKeyAdded;
             }
         }
 
@@ -309,6 +311,7 @@ bool KTN_HashMapSet(KTN_VM* vm, KTN_HashMap* map, KTN_Value key, KTN_Value value
         }
 
         if (psl > entry->psl) {
+            // Compiler-san, ganbatte!
             int32_t savedPrev = entry->orderPrevious;
             int32_t savedNext = entry->orderNext;
 
@@ -322,10 +325,24 @@ bool KTN_HashMapSet(KTN_VM* vm, KTN_HashMap* map, KTN_Value key, KTN_Value value
             entry->hash = insertHash;
             entry->psl = psl;
 
-            if (insertPrevious != -2) {
+            if (insertPrevious == -2) {
+                // Brand new key: append to the end of the order list.
+                entry->orderPrevious = map->orderTail;
+                entry->orderNext = -1;
+
+                if (map->orderTail >= 0)
+                    map->entries[map->orderTail].orderNext = (int32_t)index;
+                else
+                    map->orderHead = (int32_t)index;
+                
+                map->orderTail = (int32_t)index;
+                map->count++;
+                newKeyAdded = true;   // remember that we added a new key
+            } else {
+                // Displaced key: preserve its original order links.
                 entry->orderPrevious = insertPrevious;
                 entry->orderNext = insertNext;
-
+                
                 if (insertPrevious >= 0)
                     map->entries[insertPrevious].orderNext = (int32_t)index;
                 else
@@ -337,6 +354,7 @@ bool KTN_HashMapSet(KTN_VM* vm, KTN_HashMap* map, KTN_Value key, KTN_Value value
                     map->orderTail = (int32_t)index;
             }
 
+            // Now the displaced entry becomes the one to re‑insert.
             insertKey = tempKey;
             insertValue = tempValue;
             insertHash = tempHash;

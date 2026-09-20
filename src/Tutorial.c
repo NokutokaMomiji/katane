@@ -6,27 +6,19 @@
 #include "Tutorial.h"
 #include "Object.h"
 #include "VM.h"
-#include "Common.h"   // COLOR_* macros
+#include "Common.h"
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Forward declarations (defined in VM.c)
-// ─────────────────────────────────────────────────────────────────────────────
-KTN_InterpretResult KTN_Interpret(KTN_VM* vm, KTN_ObjModule* module,
-                                  const char* source);
-void                ModuleAdd(KTN_VM* vm, KTN_ObjModule* module, char* name);
-void                registerModuleFile(KTN_VM* vm, KTN_ObjModule* module);
-void                registerRoot(KTN_VM* vm);
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Lesson data
-// ─────────────────────────────────────────────────────────────────────────────
+KTN_InterpretResult KTN_Interpret(KTN_VM* vm, KTN_ObjModule* module, const char* source);
+void ModuleAdd(KTN_VM* vm, KTN_ObjModule* module, char* name);
+void registerModuleFile(KTN_VM* vm, KTN_ObjModule* module);
+void registerRoot(KTN_VM* vm);
 
 typedef struct {
     const char* title;
     const char* explanation;
-    const char* default_code;
+    const char* defaultCode;
     const char* tip;
-    bool        is_stub;
+    bool isStub;
 } KTN_Lesson;
 
 #define LESSON(t, e, c, tip_) { (t), (e), (c), (tip_), false }
@@ -219,32 +211,25 @@ static const KTN_Lesson LESSONS[] = {
         "Try throwing a RangeError and catching it separately from ValueError."
     ),
 
-    STUB("Enums & modules",       "enum, summon, and using blocks — coming soon."),
-    STUB("Async programming",     "Vow, async/await — coming soon."),
-    STUB("File I/O",              "fs.readFile, File objects, using — coming soon."),
-    STUB("Reflection",            "typeOf, hasField, callMethod — coming soon."),
-    STUB("Next steps",            "Where to go from here — coming soon."),
+    STUB("Enums & modules",       "enum, summon, and using blocks, coming soon."),
+    STUB("Async programming",     "Vow, async/await, coming soon."),
+    STUB("File I/O",              "fs.readFile, File objects, using, coming soon."),
+    STUB("Reflection",            "typeOf, hasField, callMethod, coming soon."),
+    STUB("Next steps",            "Where to go from here, coming soon."),
 };
 
 #define LESSON_COUNT ((int)(sizeof(LESSONS) / sizeof(LESSONS[0])))
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Per-lesson mutable state
-// ─────────────────────────────────────────────────────────────────────────────
 
 typedef enum { LS_TODO, LS_DONE, LS_SKIPPED } LessonStatus;
 
 typedef struct {
     LessonStatus status;
-    char*        user_code;   // malloc'd; NULL means use default
+    char* userCode;   // Allocated via malloc. NULL means use default.
 } LessonState;
 
-static LessonState* s_state   = NULL;
-static int          s_current = 0;
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Progress persistence
-// ─────────────────────────────────────────────────────────────────────────────
+static LessonState* lessonState = NULL;
+static int lessonCurrent = 0;
 
 #define PROGRESS_FILE ".katane_tutorial_progress"
 
@@ -263,12 +248,12 @@ static void save_progress(void) {
     free(path);
     if (!f) return;
 
-    fprintf(f, "current=%d\n", s_current);
+    fprintf(f, "current=%d\n", lessonCurrent);
     for (int i = 0; i < LESSON_COUNT; i++) {
-        fprintf(f, "lesson[%d].status=%d\n", i, (int)s_state[i].status);
-        if (s_state[i].user_code && s_state[i].user_code[0]) {
+        fprintf(f, "lesson[%d].status=%d\n", i, (int)lessonState[i].status);
+        if (lessonState[i].userCode && lessonState[i].userCode[0]) {
             fprintf(f, "lesson[%d].code=", i);
-            for (const char* c = s_state[i].user_code; *c; c++) {
+            for (const char* c = lessonState[i].userCode; *c; c++) {
                 if (*c == '\n') fputs("\\n", f);
                 else            fputc(*c, f);
             }
@@ -291,10 +276,10 @@ static void load_progress(void) {
 
         int idx, val;
         if (sscanf(line, "current=%d", &val) == 1) {
-            if (val >= 0 && val < LESSON_COUNT) s_current = val;
+            if (val >= 0 && val < LESSON_COUNT) lessonCurrent = val;
         } else if (sscanf(line, "lesson[%d].status=%d", &idx, &val) == 2) {
             if (idx >= 0 && idx < LESSON_COUNT)
-                s_state[idx].status = (LessonStatus)val;
+                lessonState[idx].status = (LessonStatus)val;
         } else if (sscanf(line, "lesson[%d].code=", &idx) == 1
                    && idx >= 0 && idx < LESSON_COUNT) {
             const char* eq = strchr(line, '=');
@@ -311,49 +296,46 @@ static void load_progress(void) {
                 }
             }
             dec[di] = '\0';
-            free(s_state[idx].user_code);
-            s_state[idx].user_code = dec;
+            free(lessonState[idx].userCode);
+            lessonState[idx].userCode = dec;
         }
     }
     fclose(f);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Bracket balance check (used for multi-line input)
-// ─────────────────────────────────────────────────────────────────────────────
+static bool hasUnclosed(const char* src, size_t len) {
+    int parentheses = 0;
+    int braces = 0;
+    int squares = 0;
 
-static bool has_unclosed(const char* src, size_t len) {
-    int parens = 0, braces = 0, squares = 0;
     for (size_t i = 0; i < len; i++) {
         switch (src[i]) {
-            case '(': parens++;  break; case ')': parens--;  break;
-            case '{': braces++;  break; case '}': braces--;  break;
-            case '[': squares++; break; case ']': squares--; break;
+            case '(': parentheses++;  break; 
+            case ')': parentheses--;  break;
+            case '{': braces++;  break;
+            case '}': braces--;  break;
+            case '[': squares++; break;
+            case ']': squares--; break;
             default: break;
         }
     }
-    return (parens > 0 || braces > 0 || squares > 0);
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Input reader
-//  Returns a malloc'd string: either a single command word or a code block.
-//  Returns NULL on EOF.
-// ─────────────────────────────────────────────────────────────────────────────
+    return (parentheses > 0 || braces > 0 || squares > 0);
+}
 
 // Commands that are recognised on a line by themselves
 static bool is_command(const char* s) {
-    return (strcmp(s, "run")    == 0 ||
-            strcmp(s, "reset")  == 0 ||
-            strcmp(s, "next")   == 0 ||
-            strcmp(s, "n")      == 0 ||
-            strcmp(s, "back")   == 0 ||
-            strcmp(s, "b")      == 0 ||
-            strcmp(s, "skip")   == 0 ||
-            strcmp(s, "repeat") == 0 ||
-            strcmp(s, "help")   == 0 ||
-            strcmp(s, "exit")   == 0 ||
-            strcmp(s, "quit")   == 0);
+    const char* valid[] = {"run", "reset", "next", "n", "back", "b", "skip", "repeat", "help", "exit", "quit"};
+    int validLength = sizeof(valid) / sizeof(const char*);
+
+    int commandLength = strlen(s);
+
+    for (int i = 0; i < validLength; i++) {
+        if (strncmp(s, valid[i], commandLength) == 0)
+            return true;
+    }
+
+    return false;
 }
 
 static char* read_input(void) {
@@ -394,11 +376,11 @@ static char* read_input(void) {
         memcpy(buf + length, line, raw_ll);
         length += raw_ll;
 
-        if (is_blank && length > 0 && !has_unclosed(buf, length)) {
+        if (is_blank && length > 0 && !hasUnclosed(buf, length)) {
             buf[length] = '\0';
             return buf;
         }
-        if (!is_blank && !has_unclosed(buf, length)) {
+        if (!is_blank && !hasUnclosed(buf, length)) {
             buf[length] = '\0';
             return buf;
         }
@@ -406,59 +388,59 @@ static char* read_input(void) {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  VM helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-static KTN_ObjModule* make_tutorial_module(KTN_VM* vm) {
+static KTN_ObjModule* makeTutorialModule(KTN_VM* vm) {
     char* name = strdup("<tutorial>");
     char* root = strdup("<tutorial>");
+
     KTN_ObjModule* mod = ModuleNew(vm, name, root, NULL);
+
     mod->isMain = true;
+
     ModuleAdd(vm, mod, NULL);
+
     vm->rootFile = root;
+
     registerModuleFile(vm, mod);
     registerRoot(vm);
+
     return mod;
 }
 
 static bool execute(KTN_VM* vm, KTN_ObjModule* mod, const char* source) {
-    KTN_InterpretResult r = KTN_Interpret(vm, mod, source);
-    return r.status == INTERPRET_OK;
+    KTN_InterpretResult result = KTN_Interpret(vm, mod, source);
+    return (result.status == INTERPRET_OK);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  UI helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-static void print_rule(void) {
+static void printRule(void) {
     printf(COLOR_GRAY
            "──────────────────────────────────────────────────────"
            COLOR_RESET "\n");
 }
 
-static void print_progress(void) {
+static void printProgress(void) {
     printf(COLOR_GRAY "[" COLOR_RESET);
     for (int i = 0; i < LESSON_COUNT; i++) {
-        if (i == s_current)
+        if (i == lessonCurrent)
             printf(COLOR_MAGENTA "●" COLOR_RESET);
-        else if (s_state[i].status == LS_DONE)
+        else if (lessonState[i].status == LS_DONE)
             printf(COLOR_CUSTOM "✓" COLOR_RESET);
-        else if (s_state[i].status == LS_SKIPPED)
+        else if (lessonState[i].status == LS_SKIPPED)
             printf(COLOR_GRAY "–" COLOR_RESET);
         else
             printf(COLOR_GRAY "·" COLOR_RESET);
     }
     int done = 0;
+
     for (int i = 0; i < LESSON_COUNT; i++)
-        if (s_state[i].status == LS_DONE) done++;
+        if (lessonState[i].status == LS_DONE) done++;
+
     printf(COLOR_GRAY "]  %d/%d done\n" COLOR_RESET, done, LESSON_COUNT);
 }
 
 static void show_code(int idx) {
-    const char* code = (s_state[idx].user_code && s_state[idx].user_code[0])
-                       ? s_state[idx].user_code
-                       : LESSONS[idx].default_code;
+    const char* code = (lessonState[idx].userCode && lessonState[idx].userCode[0])
+                       ? lessonState[idx].userCode
+                       : LESSONS[idx].defaultCode;
 
     printf(COLOR_GRAY "  ┌─ code ─────────────────────────────────────────\n"
                       COLOR_RESET);
@@ -479,14 +461,14 @@ static void show_code(int idx) {
 
 static void show_lesson(int idx) {
     printf("\n");
-    print_progress();
-    print_rule();
+    printProgress();
+    printRule();
     printf(COLOR_CUSTOM " Lesson %d/%d · %s" COLOR_RESET "\n",
            idx + 1, LESSON_COUNT, LESSONS[idx].title);
-    print_rule();
+    printRule();
     printf("\n%s\n\n", LESSONS[idx].explanation);
 
-    if (LESSONS[idx].is_stub) {
+    if (LESSONS[idx].isStub) {
         printf(COLOR_GRAY "  (This lesson is not yet written — type 'next' to continue.)\n\n"
                COLOR_RESET);
         return;
@@ -520,14 +502,14 @@ static void show_help(void) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 static void run_lesson(KTN_VM* vm, KTN_ObjModule* mod, int idx) {
-    if (LESSONS[idx].is_stub) {
+    if (LESSONS[idx].isStub) {
         printf(COLOR_GRAY "  (Stub lesson — nothing to run.)\n\n" COLOR_RESET);
         return;
     }
 
-    const char* code = (s_state[idx].user_code && s_state[idx].user_code[0])
-                       ? s_state[idx].user_code
-                       : LESSONS[idx].default_code;
+    const char* code = (lessonState[idx].userCode && lessonState[idx].userCode[0])
+                       ? lessonState[idx].userCode
+                       : LESSONS[idx].defaultCode;
 
     printf("\n");
     fflush(stdout);
@@ -539,7 +521,7 @@ static void run_lesson(KTN_VM* vm, KTN_ObjModule* mod, int idx) {
         if (LESSONS[idx].tip[0])
             printf(COLOR_GRAY "  Tip: %s\n" COLOR_RESET, LESSONS[idx].tip);
         printf("\n");
-        s_state[idx].status = LS_DONE;
+        lessonState[idx].status = LS_DONE;
         save_progress();
     } else {
         // KTN_Interpret already printed the error to stderr
@@ -556,8 +538,8 @@ static void run_lesson(KTN_VM* vm, KTN_ObjModule* mod, int idx) {
 
 static void store_and_run(KTN_VM* vm, KTN_ObjModule* mod, int idx,
                            const char* code) {
-    free(s_state[idx].user_code);
-    s_state[idx].user_code = strdup(code);
+    free(lessonState[idx].userCode);
+    lessonState[idx].userCode = strdup(code);
     save_progress();
     show_code(idx);
     run_lesson(vm, mod, idx);
@@ -568,22 +550,22 @@ static void store_and_run(KTN_VM* vm, KTN_ObjModule* mod, int idx,
 // ─────────────────────────────────────────────────────────────────────────────
 
 void KTN_TutorialRun(KTN_VM* vm) {
-    s_state = (LessonState*)calloc(LESSON_COUNT, sizeof(LessonState));
-    if (!s_state) {
+    lessonState = (LessonState*)calloc(LESSON_COUNT, sizeof(LessonState));
+    if (!lessonState) {
         fprintf(stderr, "[ERROR]: Out of memory starting tutorial.\n");
         return;
     }
 
     load_progress();
 
-    KTN_ObjModule* mod = make_tutorial_module(vm);
+    KTN_ObjModule* mod = makeTutorialModule(vm);
 
     printf("\n" COLOR_CUSTOM "Welcome to the Katane interactive tutorial!\n" COLOR_RESET);
     printf("Type " COLOR_MAGENTA "help" COLOR_RESET " for commands, "
            COLOR_MAGENTA "exit" COLOR_RESET " to quit.\n");
     printf(COLOR_GRAY "Progress is saved to ~/" PROGRESS_FILE ".\n" COLOR_RESET);
 
-    show_lesson(s_current);
+    show_lesson(lessonCurrent);
 
     while (1) {
         char* input = read_input();
@@ -602,30 +584,30 @@ void KTN_TutorialRun(KTN_VM* vm) {
             free(input); show_help(); continue;
         }
         if (strcmp(input, "run") == 0) {
-            free(input); run_lesson(vm, mod, s_current); continue;
+            free(input); run_lesson(vm, mod, lessonCurrent); continue;
         }
         if (strcmp(input, "reset") == 0) {
             free(input);
-            free(s_state[s_current].user_code);
-            s_state[s_current].user_code = NULL;
+            free(lessonState[lessonCurrent].userCode);
+            lessonState[lessonCurrent].userCode = NULL;
             save_progress();
             printf(COLOR_GRAY "  Code restored to default.\n\n" COLOR_RESET);
-            show_code(s_current);
+            show_code(lessonCurrent);
             continue;
         }
         if (strcmp(input, "repeat") == 0) {
-            free(input); show_lesson(s_current); continue;
+            free(input); show_lesson(lessonCurrent); continue;
         }
         if (strcmp(input, "next") == 0 || strcmp(input, "n") == 0) {
             free(input);
-            if (s_current < LESSON_COUNT - 1) {
-                s_current++;
+            if (lessonCurrent < LESSON_COUNT - 1) {
+                lessonCurrent++;
                 save_progress();
-                show_lesson(s_current);
+                show_lesson(lessonCurrent);
             } else {
                 int done = 0;
                 for (int i = 0; i < LESSON_COUNT; i++)
-                    if (s_state[i].status == LS_DONE) done++;
+                    if (lessonState[i].status == LS_DONE) done++;
                 printf(COLOR_CUSTOM "  You've reached the end of the tutorial!\n" COLOR_RESET);
                 printf("  %d/%d lessons completed. Type 'exit' to return to the REPL.\n\n",
                        done, LESSON_COUNT);
@@ -634,10 +616,10 @@ void KTN_TutorialRun(KTN_VM* vm) {
         }
         if (strcmp(input, "back") == 0 || strcmp(input, "b") == 0) {
             free(input);
-            if (s_current > 0) {
-                s_current--;
+            if (lessonCurrent > 0) {
+                lessonCurrent--;
                 save_progress();
-                show_lesson(s_current);
+                show_lesson(lessonCurrent);
             } else {
                 printf(COLOR_GRAY "  Already on the first lesson.\n\n" COLOR_RESET);
             }
@@ -645,24 +627,24 @@ void KTN_TutorialRun(KTN_VM* vm) {
         }
         if (strcmp(input, "skip") == 0) {
             free(input);
-            s_state[s_current].status = LS_SKIPPED;
+            lessonState[lessonCurrent].status = LS_SKIPPED;
             printf(COLOR_GRAY "  Lesson skipped.\n" COLOR_RESET);
             save_progress();
-            if (s_current < LESSON_COUNT - 1) {
-                s_current++;
+            if (lessonCurrent < LESSON_COUNT - 1) {
+                lessonCurrent++;
                 save_progress();
-                show_lesson(s_current);
+                show_lesson(lessonCurrent);
             }
             continue;
         }
 
         // Not a command — it's code the user typed.
-        store_and_run(vm, mod, s_current, input);
+        store_and_run(vm, mod, lessonCurrent, input);
         free(input);
     }
 
-    for (int i = 0; i < LESSON_COUNT; i++) free(s_state[i].user_code);
-    free(s_state);
-    s_state   = NULL;
-    s_current = 0;
+    for (int i = 0; i < LESSON_COUNT; i++) free(lessonState[i].userCode);
+    free(lessonState);
+    lessonState   = NULL;
+    lessonCurrent = 0;
 }

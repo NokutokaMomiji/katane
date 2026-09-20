@@ -11,31 +11,33 @@ KTN_NativeKataBuilder* KTN_BeginNativeClass(KTN_VM* vm, const char* name, const 
     KTN_NativeKataBuilder* builder = malloc(sizeof(KTN_NativeKataBuilder));
     builder->vm = vm;
 
-    KTN_ObjString* className = StringCopy(vm, name, (int)strlen(name));
+    KTN_ObjString* className = STRING_COPY(name);
     Push(vm, OBJECT_VALUE(className));
     KTN_ObjKata* newClass = KataNew(vm, className);
     Push(vm, OBJECT_VALUE(newClass));
 
     if (superclassName != NULL) {
         KTN_Value superclassValue;
-        KTN_ObjString* superclassKey = StringCopy(vm, superclassName, (int)strlen(superclassName));
+        KTN_ObjString* superclassKey = STRING_COPY(superclassName);
         Push(vm, OBJECT_VALUE(superclassKey));
 
         if (TableGet(&vm->globals, superclassKey, &superclassValue) && IS_CLASS(superclassValue)) {
             KTN_ObjKata* sokata = AS_CLASS(superclassValue);
+            
             TableAddAll(vm, &sokata->methods, &newClass->methods);
             TableAddAll(vm, &sokata->properties, &newClass->properties);
+
             newClass->sokata = sokata;
             // Inherit native constructor by default
             if (!IS_NULL(sokata->constructor))
                 newClass->constructor = sokata->constructor;
         }
 
-        Pop(vm); // superclassKey
+        Pop(vm);
     }
 
     builder->builtClass = newClass;
-    // Keep class and className on the stack for GC protection while building
+    // Keep class and className on the stack for GC protection while building.
     return builder;
 }
 
@@ -43,10 +45,10 @@ KTN_ObjKata* KTN_EndNativeClass(KTN_NativeKataBuilder* builder) {
     KTN_VM* vm = builder->vm;
     KTN_ObjKata* result = builder->builtClass;
 
-    // Register in globals
+    // Register in globals.
     TableSet(vm, &vm->globals, result->className, OBJECT_VALUE(result));
 
-    // Pop the class and className that were pushed for GC protection
+    // Pop the class and className that were pushed for GC protection.
     Pop(vm); // builtClass
     Pop(vm); // className
 
@@ -75,6 +77,7 @@ void KTN_SetNativeConstructor(KTN_NativeKataBuilder* builder, NativeFnEx functio
     TableSet(vm, &builder->builtClass->methods, builder->builtClass->className, OBJECT_VALUE(constructorNative));
     Pop(vm);
 }
+
 void KTN_AddNativeGetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs) {
     KTN_VM* vm = builder->vm;
     KTN_Table* methods = &builder->builtClass->methods;

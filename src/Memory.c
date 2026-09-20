@@ -47,7 +47,7 @@ void KTN_MemoryMarkObject(KTN_VM* vm, KTN_Object* object) {
         return;
 
 #ifdef DEBUG_LOG_GC
-    printf("> %p mark ", (void*)object);
+    printf("> [GC]: %p mark ", (void*)object);
     ValuePrint(OBJECT_VALUE(object));
     printf("\n");
 #endif
@@ -85,25 +85,25 @@ static void MarkArray(KTN_VM* vm, KTN_ValueArray* array) {
 
 static void BlackenObject(KTN_VM* vm, KTN_Object* object) {
 #ifdef DEBUG_LOG_GC
-    printf("%p blacken ", (void*)object);
+    printf("> [GC]: %p blacken ", (void*)object);
     ValuePrint(OBJECT_VALUE(object));
     printf("\n");
 #endif
     switch (object->type) {
         case OBJ_CLOSURE: {
-            KTN_ObjClosure* Closure = (KTN_ObjClosure*)object;
-            KTN_MemoryMarkObject(vm, (KTN_Object*)Closure->function);
-            for (int i = 0; i < Closure->upvalueCount; i++) {
-                KTN_MemoryMarkObject(vm, (KTN_Object*)Closure->upvalues[i]);
+            KTN_ObjClosure* closure = (KTN_ObjClosure*)object;
+            KTN_MemoryMarkObject(vm, (KTN_Object*)closure->function);
+            for (int i = 0; i < closure->upvalueCount; i++) {
+                KTN_MemoryMarkObject(vm, (KTN_Object*)closure->upvalues[i]);
             }
             break;
         }
 
         case OBJ_FUNCTION: {
-            KTN_ObjShiki* Function = (KTN_ObjShiki*)object;
-            KTN_MemoryMarkObject(vm, (KTN_Object*)Function->name);
-            KTN_MemoryMarkObject(vm, (KTN_Object*)Function->signature);
-            MarkArray(vm, &Function->chunk.constants);
+            KTN_ObjShiki* shiki = (KTN_ObjShiki*)object;
+            KTN_MemoryMarkObject(vm, (KTN_Object*)shiki->name);
+            KTN_MemoryMarkObject(vm, (KTN_Object*)shiki->signature);
+            MarkArray(vm, &shiki->chunk.constants);
             break;
         }
 
@@ -236,6 +236,7 @@ static void BlackenObject(KTN_VM* vm, KTN_Object* object) {
             for (int i = 0; i < signature->parameterCount; i++) {
                 KTN_MemoryMarkObject(vm, (KTN_Object*)signature->parameters[i].name);
                 KTN_MemoryMarkObject(vm, (KTN_Object*)signature->parameters[i].type);
+                KTN_MemoryMarkValue(vm, signature->parameters[i].defaultValue);
             }
 
             break;
@@ -260,7 +261,7 @@ static void BlackenObject(KTN_VM* vm, KTN_Object* object) {
 
 static void FreeObject(KTN_VM* vm, KTN_Object* object) {
 #ifdef DEBUG_LOG_GC
-    printf("> %p free type %d\n", (void*)object, object->type);
+    printf("> [GC]: %p free type %d\n", (void*)object, object->type);
 #endif
     switch(object->type) {
         case OBJ_STRING: {
@@ -295,8 +296,8 @@ static void FreeObject(KTN_VM* vm, KTN_Object* object) {
             break;
 
         case OBJ_CLOSURE: {
-            KTN_ObjClosure* Closure = (KTN_ObjClosure*)object;
-            FREE_ARRAY(KTN_ObjUpvalue*, Closure->upvalues, Closure->upvalueCount);
+            KTN_ObjClosure* closure = (KTN_ObjClosure*)object;
+            FREE_ARRAY(KTN_ObjUpvalue*, closure->upvalues, closure->upvalueCount);
             FREE(KTN_ObjClosure, object);
             break;
         }
@@ -473,31 +474,31 @@ static void TraceReferences(KTN_VM* vm) {
 }
 
 static void Sweep(KTN_VM* vm) {
-    KTN_Object* Previous = NULL;
-    KTN_Object* Current = vm->objects;
+    KTN_Object* previous = NULL;
+    KTN_Object* current = vm->objects;
 
-    while (Current != NULL) {
-        if (Current->isMarked) {
-            Current->isMarked = false;
+    while (current != NULL) {
+        if (current->isMarked) {
+            current->isMarked = false;
+            
             // If the current object is marked, then we know we don't have to get rid of it.
             // We merely set it as the previous object and move to the next.
-            Previous = Current;
-            Current = Current->next;
-        }
-        else {
+            previous = current;
+            current = current->next;
+        } else {
             // We keep the currently unreached object.
-            KTN_Object* Unreached = Current;
+            KTN_Object* unreached = current;
 
             // We check the following object to see if we ought to link the elements.
-            Current = Current->next;
+            current = current->next;
 
             // There is a previous element in the linked list, so we link the elements.
-            if (Previous != NULL)
-                Previous->next = Current;
+            if (previous != NULL)
+                previous->next = current;
             else    // There isn't, so the current element is now the beginning element in the linked list.i
-                vm->objects = Current;
+                vm->objects = current;
 
-            FreeObject(vm, Unreached);
+            FreeObject(vm, unreached);
         }
     }
 }
