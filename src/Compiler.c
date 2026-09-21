@@ -565,7 +565,8 @@ static bool StringsEqual(KTN_ObjString* a, KTN_ObjString* b) {
 static bool ResolveLocalConst(KTN_Token* name, KTN_Value* value) {
     for (int i = current->constBindingCount - 1; i >= 0; i--) {
         ConstBinding* binding = &current->constBindings[i];
-        if (IdentifiersEqual(&binding->name, name)) {
+
+        if (binding->depth <= current->scopeDepth && IdentifiersEqual(&binding->name, name)) {
             *value = binding->value;
             return true;
         }
@@ -593,7 +594,7 @@ void AddConstBinding(KTN_Token name, int depth, KTN_Value value) {
         return;
     }
 
-    ConstBinding* binding = &current->constBindings[current->constBindingCount];
+    ConstBinding* binding = &current->constBindings[current->constBindingCount++];
 
     binding->name = name;
     binding->depth = depth;
