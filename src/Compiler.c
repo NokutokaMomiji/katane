@@ -1530,13 +1530,18 @@ static void ConstDeclaration() {
     CompilerConsume(TOKEN_IDENTIFIER, "Expected mochi name after \"mochi\"");
     KTN_Token name = parser.previous;
 
+    KTN_Value dummy;
+    if (ResolveLocalConst(&name, &dummy) || ResolveTopLevelConst(parser.vm, &name, &dummy)) {
+        Error("Const mochi has already been defined and cannot be reassigned");
+    }
+
     CompilerConsume(TOKEN_ASSIGN, "Expected '=' after const mochi name");
 
     KTN_Value constValue;
 
     // Convert expression into a constant KTN_Value if it is a valid constant.
     if (!EvaluateCompiledExpression(&constValue)) {
-        Error("Const value must be a compile-time constant.");
+        Error("Const value must be a compile-time constant");
         return;
     }
 
@@ -1818,8 +1823,7 @@ static void RegisterClassProperty(KTN_Token name) {
         return;
 
     if (currentClass->propertyCount >= MAX_CLASS_PROPERTIES) {
-        Error(
-                "Too many instance fields in this kata for implicit \"this\" tracking");
+        Error("Too many instance fields in this kata for implicit \"this\" tracking");
         return;
     }
 
@@ -1831,8 +1835,7 @@ static void RegisterClassMethod(KTN_Token name) {
         return;
 
     if (currentClass->methodCount >= MAX_CLASS_PROPERTIES) {
-        Error("Too many instance methods in this kata for implicity \"this\" "
-                    "tracking");
+        Error("Too many instance methods in this kata for implicit \"this\" tracking");
         return;
     }
 
