@@ -99,7 +99,7 @@ typedef enum {
     OP_BITWISE_AND,
     OP_BITWISE_XOR,
     OP_BITWISE_NOT,
-    OP_SHIFT_LEFT,    // << (for future use, stubs for now)
+    OP_SHIFT_LEFT,    // <<
     OP_SHIFT_RIGHT,   // >>
     OP_NOT,
     OP_NEGATE,          //Negates a value.

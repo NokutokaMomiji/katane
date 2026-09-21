@@ -85,6 +85,19 @@ static int ConstantLongPairInstruction(const char* name, KTN_Chunk* chunk, int o
     return offset + 9;
 }
 
+static int ConstantLongByteInstruction(const char* name, KTN_Chunk* chunk, int offset) {
+    uint32_t constantIndex = (uint32_t)(chunk->code[offset + 1] << 24)
+                           | (uint32_t)(chunk->code[offset + 2] << 16)
+                           | (uint32_t)(chunk->code[offset + 3] << 8)
+                           | (uint32_t)(chunk->code[offset + 4]);
+    uint8_t byte = chunk->code[offset + 5];
+
+    printf("%-16s %4" PRIu32 " '", name, constantIndex);
+    ObjectRepr(chunk->constants.values[constantIndex]);
+    printf("' %d\n", byte);
+    return offset + 6;  // We skip over the Constant Operation Code + the 4 bytes that make up the long index.
+}
+
 static int InitPropertyInstruction(const char* name, KTN_Chunk* chunk, int offset) {
     uint32_t constantIndex = (uint32_t)(chunk->code[offset + 1] << 24)
                            | (uint32_t)(chunk->code[offset + 2] << 16)
@@ -361,6 +374,9 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
             return DescriptorInstruction("OP_CHECK_PARAMS", chunk, offset);
         case OP_CHECK_TYPE:
             return ConstantLongInstruction("OP_CHECK_TYPE", chunk, offset);
+        case OP_MARK_GLOBAL_FLAGS: {
+            return ConstantLongByteInstruction("OP_MARK_GLOBAL_FLAGS", chunk, offset);
+        }
         default:
             printf("Unknown Operation Code %d\n", instruction);
             return offset + 1;
