@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/data/data/com.termux/files/home/katane/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

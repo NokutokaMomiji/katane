@@ -1,3 +1,0 @@
-/data/data/com.termux/files/home/katane/CMakeFiles/katane.dir
-/data/data/com.termux/files/home/katane/CMakeFiles/edit_cache.dir
-/data/data/com.termux/files/home/katane/CMakeFiles/rebuild_cache.dir
