@@ -183,9 +183,9 @@ static void DumpCompilerState(void) {
         fprintf(stderr, "Source: %d | %s\n", parser.current.line, sourceLine);
 
     fprintf(stderr, "Parser: hadError=%s panicMode=%s collectOnly=%s\n",
-            parser.hadError ? "true" : "false",
-            parser.panicMode ? "true" : "false",
-            collectOnly ? "true" : "false");
+            (parser.hadError) ? "true" : "false",
+            (parser.panicMode) ? "true" : "false",
+            (collectOnly) ? "true" : "false");
 
     // Compiler chain (innermost to outermost)
     fprintf(stderr, "\nCompiler chain (innermost first):\n");
@@ -499,7 +499,7 @@ static KTN_ObjShiki* CompilerEnd() {
     KTN_ObjShiki* function = current->function;
 
     if (!parser.hadError && parser.vm->shouldPrintBytecode)
-        DisassembleChunk(CurrentChunk(), function->name != NULL ? function->name->chars : "<script>");
+        DisassembleChunk(CurrentChunk(), (function->name != NULL) ? function->name->chars : "<script>");
 
 #ifdef DEBUG_PRINT_CODE
         DisassembleChunk(CurrentChunk(), function->name != NULL ? function->name->chars : "<script>");
@@ -566,7 +566,7 @@ static bool ResolveLocalConst(KTN_Token* name, KTN_Value* value) {
     for (int i = current->constBindingCount - 1; i >= 0; i--) {
         ConstBinding* binding = &current->constBindings[i];
         if (IdentifiersEqual(&binding->name, name)) {
-           * value = binding->value;
+            *value = binding->value;
             return true;
         }
     }
@@ -1164,20 +1164,20 @@ static void CompilerDot(bool canAssign) {
 
 static void CompilerLiteral(bool canAssign) {
     switch (parser.previous.type) {
-    case TOKEN_TRUE:
-        CompilerEmitByte(OP_TRUE);
-        break;
-    case TOKEN_FALSE:
-        CompilerEmitByte(OP_FALSE);
-        break;
-    case TOKEN_NULL:
-        CompilerEmitByte(OP_NULL);
-        break;
-    case TOKEN_MAYBE:
-        CompilerEmitByte(OP_MAYBE);
-        break;
-    default:
-        return; // Unreachable.
+        case TOKEN_TRUE:
+            CompilerEmitByte(OP_TRUE);
+            break;
+        case TOKEN_FALSE:
+            CompilerEmitByte(OP_FALSE);
+            break;
+        case TOKEN_NULL:
+            CompilerEmitByte(OP_NULL);
+            break;
+        case TOKEN_MAYBE:
+            CompilerEmitByte(OP_MAYBE);
+            break;
+        default:
+            return; // Unreachable.
     }
 }
 
@@ -1189,22 +1189,6 @@ static void CompilerBlock() {
     }
 
     CompilerConsume(TOKEN_BRACKET_CLOSE, "Expected '}' after block");
-}
-
-static KTN_MAYBE_UNUSED KTN_ObjString* BuildTypeDescriptorKey(KTN_VM* vm, KTN_ObjString* *names,
-                                                                                          int count) {
-    StringBuilder builder;
-    SBInit(&builder);
-
-    for (int i = 0; i < count; i++) {
-        if (i > 0)
-            SBAppendCStr(&builder, "|");
-        SBAppend(&builder, names[i]->chars, names[i]->length);
-    }
-
-    KTN_ObjString* key = StringCopy(vm, builder.buffer, builder.length);
-    SBFree(&builder);
-    return key;
 }
 
 static KTN_ObjTypeDescriptor* TypeAnnotationExpression() {

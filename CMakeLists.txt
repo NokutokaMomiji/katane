@@ -32,6 +32,7 @@ set(KATANE_SOURCES
 )
 
 add_executable(katane ${KATANE_SOURCES})
+target_link_libraries(katane m)
 
 target_include_directories(katane PRIVATE include)
 

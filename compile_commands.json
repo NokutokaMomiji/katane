@@ -1,128 +1,128 @@
 [
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Array.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Array.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Array.c",
-  "output": "CMakeFiles/katane.dir/src/Array.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Array.c.o -c /data/data/com.termux/files/home/katane/src/Array.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Array.c",
+  "output": "CMakeFiles/katane.dir/src/Array.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Chunk.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Chunk.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Chunk.c",
-  "output": "CMakeFiles/katane.dir/src/Chunk.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Chunk.c.o -c /data/data/com.termux/files/home/katane/src/Chunk.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Chunk.c",
+  "output": "CMakeFiles/katane.dir/src/Chunk.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Compiler.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Compiler.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Compiler.c",
-  "output": "CMakeFiles/katane.dir/src/Compiler.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Compiler.c.o -c /data/data/com.termux/files/home/katane/src/Compiler.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Compiler.c",
+  "output": "CMakeFiles/katane.dir/src/Compiler.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Debug.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Debug.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Debug.c",
-  "output": "CMakeFiles/katane.dir/src/Debug.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Debug.c.o -c /data/data/com.termux/files/home/katane/src/Debug.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Debug.c",
+  "output": "CMakeFiles/katane.dir/src/Debug.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Exceptions.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Exceptions.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Exceptions.c",
-  "output": "CMakeFiles/katane.dir/src/Exceptions.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Exceptions.c.o -c /data/data/com.termux/files/home/katane/src/Exceptions.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Exceptions.c",
+  "output": "CMakeFiles/katane.dir/src/Exceptions.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/HashMap.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/HashMap.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/HashMap.c",
-  "output": "CMakeFiles/katane.dir/src/HashMap.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/HashMap.c.o -c /data/data/com.termux/files/home/katane/src/HashMap.c",
+  "file": "/data/data/com.termux/files/home/katane/src/HashMap.c",
+  "output": "CMakeFiles/katane.dir/src/HashMap.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Main.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Main.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Main.c",
-  "output": "CMakeFiles/katane.dir/src/Main.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Main.c.o -c /data/data/com.termux/files/home/katane/src/Main.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Main.c",
+  "output": "CMakeFiles/katane.dir/src/Main.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Map.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Map.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Map.c",
-  "output": "CMakeFiles/katane.dir/src/Map.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Map.c.o -c /data/data/com.termux/files/home/katane/src/Map.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Map.c",
+  "output": "CMakeFiles/katane.dir/src/Map.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Memory.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Memory.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Memory.c",
-  "output": "CMakeFiles/katane.dir/src/Memory.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Memory.c.o -c /data/data/com.termux/files/home/katane/src/Memory.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Memory.c",
+  "output": "CMakeFiles/katane.dir/src/Memory.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Native.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Native.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Native.c",
-  "output": "CMakeFiles/katane.dir/src/Native.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Native.c.o -c /data/data/com.termux/files/home/katane/src/Native.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Native.c",
+  "output": "CMakeFiles/katane.dir/src/Native.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Object.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Object.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Object.c",
-  "output": "CMakeFiles/katane.dir/src/Object.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Object.c.o -c /data/data/com.termux/files/home/katane/src/Object.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Object.c",
+  "output": "CMakeFiles/katane.dir/src/Object.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Platform.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Platform.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Platform.c",
-  "output": "CMakeFiles/katane.dir/src/Platform.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Platform.c.o -c /data/data/com.termux/files/home/katane/src/Platform.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Platform.c",
+  "output": "CMakeFiles/katane.dir/src/Platform.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Primitives.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Primitives.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Primitives.c",
-  "output": "CMakeFiles/katane.dir/src/Primitives.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Primitives.c.o -c /data/data/com.termux/files/home/katane/src/Primitives.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Primitives.c",
+  "output": "CMakeFiles/katane.dir/src/Primitives.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Scanner.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Scanner.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Scanner.c",
-  "output": "CMakeFiles/katane.dir/src/Scanner.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Scanner.c.o -c /data/data/com.termux/files/home/katane/src/Scanner.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Scanner.c",
+  "output": "CMakeFiles/katane.dir/src/Scanner.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Table.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Table.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Table.c",
-  "output": "CMakeFiles/katane.dir/src/Table.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Table.c.o -c /data/data/com.termux/files/home/katane/src/Table.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Table.c",
+  "output": "CMakeFiles/katane.dir/src/Table.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Tutorial.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Tutorial.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Tutorial.c",
-  "output": "CMakeFiles/katane.dir/src/Tutorial.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Tutorial.c.o -c /data/data/com.termux/files/home/katane/src/Tutorial.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Tutorial.c",
+  "output": "CMakeFiles/katane.dir/src/Tutorial.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/TypeDescriptor.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/TypeDescriptor.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/TypeDescriptor.c",
-  "output": "CMakeFiles/katane.dir/src/TypeDescriptor.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/TypeDescriptor.c.o -c /data/data/com.termux/files/home/katane/src/TypeDescriptor.c",
+  "file": "/data/data/com.termux/files/home/katane/src/TypeDescriptor.c",
+  "output": "CMakeFiles/katane.dir/src/TypeDescriptor.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Utf8.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Utf8.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Utf8.c",
-  "output": "CMakeFiles/katane.dir/src/Utf8.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Utf8.c.o -c /data/data/com.termux/files/home/katane/src/Utf8.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Utf8.c",
+  "output": "CMakeFiles/katane.dir/src/Utf8.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Utilities.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Utilities.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Utilities.c",
-  "output": "CMakeFiles/katane.dir/src/Utilities.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Utilities.c.o -c /data/data/com.termux/files/home/katane/src/Utilities.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Utilities.c",
+  "output": "CMakeFiles/katane.dir/src/Utilities.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/Value.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Value.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/Value.c",
-  "output": "CMakeFiles/katane.dir/src/Value.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/Value.c.o -c /data/data/com.termux/files/home/katane/src/Value.c",
+  "file": "/data/data/com.termux/files/home/katane/src/Value.c",
+  "output": "CMakeFiles/katane.dir/src/Value.c.o"
 },
 {
-  "directory": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/build/msys/release",
-  "command": "/D/dev/msys64/ucrt64/bin/gcc.exe -DNDEBUG @CMakeFiles/katane.dir/includes_C.rsp -O3 -DNDEBUG -std=c99 -Wall -O2 -o CMakeFiles/katane.dir/src/VM.c.obj -c \"/D/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/VM.c\"",
-  "file": "D:/Archivos de Usuario/Escritorio/Stuff/Projects/katane/src/VM.c",
-  "output": "CMakeFiles/katane.dir/src/VM.c.obj"
+  "directory": "/data/data/com.termux/files/home/katane",
+  "command": "/data/data/com.termux/files/usr/bin/cc  -I/data/data/com.termux/files/home/katane/include -O2 -g -DNDEBUG -std=c99 -Wall -o CMakeFiles/katane.dir/src/VM.c.o -c /data/data/com.termux/files/home/katane/src/VM.c",
+  "file": "/data/data/com.termux/files/home/katane/src/VM.c",
+  "output": "CMakeFiles/katane.dir/src/VM.c.o"
 }
 ]
