@@ -826,7 +826,8 @@ void VMInit(KTN_VM* vm) {
     KTN_WellKnownNamesInit(vm, &vm->wellKnownNames);
 
     KTN_DescriptorSetInit(&vm->typeDescriptors);
-    TableInit(&vm->globalTypes);
+    TableInit(&vm->compilerState.globalTypes);
+    TableInit(&vm->compilerState.declaredGlobals);
 
     vm->initString = NULL;
 

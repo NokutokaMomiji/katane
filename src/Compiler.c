@@ -1029,7 +1029,7 @@ static void EmitCheckedSet(uint8_t setOp, int argument, KTN_Token* name) {
         KTN_ObjString* nameStr = StringCopy(parser.vm, name->start, name->length);
         KTN_Value typeDescriptor;
 
-        if (TableGet(&parser.vm->globalTypes, nameStr, &typeDescriptor) && IS_TYPE_DESCRIPTOR(typeDescriptor)) {
+        if (TableGet(&parser.vm->compilerState.globalTypes, nameStr, &typeDescriptor) && IS_TYPE_DESCRIPTOR(typeDescriptor)) {
             int32_t descriptorIndex = (int32_t)CompilerMakeConstant(typeDescriptor);
             CompilerEmitByteLong(OP_SET_GLOBAL_TYPED, (uint32_t)argument);
             CompilerEmitLong((uint32_t)descriptorIndex);
@@ -2622,7 +2622,7 @@ static void VariableDeclaration() {
             KTN_ObjString* nameString = StringCopy(parser.vm, name.start, name.length);
             KTN_Value typeDescriptor = CurrentChunk()->constants.values[typeDescriptorIndex];
 
-            TableSet(parser.vm, &parser.vm->globalTypes, nameString, typeDescriptor);
+            TableSet(parser.vm, &parser.vm->compilerState.globalTypes, nameString, typeDescriptor);
         }
     }
 

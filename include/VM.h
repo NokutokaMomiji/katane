@@ -48,6 +48,12 @@ typedef struct {
     KTN_Value value;
 } KTN_ErrorFrame;
 
+/// Compiler is ephemeral, but certain states must persist. VM persists for the lifetime of the interpreter. We achieve this via handing the VM an object that contains the compiler state.
+typedef struct {
+    KTN_Table globalTypes;
+    KTN_Table declaredGlobals;
+} KTN_CompilerState;
+
 struct KTN_VM {
     KTN_CallFrame frames[MAX_FRAMES];
     KTN_CallFrame* currentFrame;
@@ -70,8 +76,8 @@ struct KTN_VM {
     KTN_Table bytesMethods;
 
     KTN_DescriptorSet typeDescriptors;
-    KTN_Table globalTypes;
-
+    KTN_CompilerState compilerState;
+    
     KTN_Object* objects;
     int grayCount;
     int grayCapacity;
