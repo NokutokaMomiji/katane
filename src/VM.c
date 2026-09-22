@@ -1898,7 +1898,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 break;
             }
             case OP_GET_INDEX_RANGED: {
-                if (!IS_OBJECT(Peek(vm, 3))) {
+                if (!IS_OBJECT(Peek(vm, 3)) || !IS_ARRAY(Peek(vm, 3))) {
                     KTN_RuntimeError(vm, "Cannot access the indexes of a non-object.");
                     return RUNTIME_ERROR(NULL_VALUE);
                 }
@@ -1909,7 +1909,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     if (!KATANE_RUNTIME_ERROR("Invalid array access.", COLOR_MAGENTA "Nuh-uh~" COLOR_RESET " That index is way beyond my tail's reach... reach softer and sweeter next time~! ฅ(>ω<)ฅ")) return RUNTIME_ERROR(NULL_VALUE);
                 }
 
-                PopN(vm, 3);
+                PopN(vm, 4);
                 Push(vm, newArray);
                 break;
             }
