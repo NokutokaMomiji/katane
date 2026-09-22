@@ -703,7 +703,18 @@ static DECLARE_NATIVE(Stringify) {
     RETURN_VALUE(OBJECT_VALUE(str));
 }
 
-static KTN_MAYBE_UNUSED void PrintCallFrame(KTN_VM* vm, const KTN_CallFrame* frame) {
+static DECLARE_NATIVE(RemoveFile) {
+    EXPECT_ARGC(1);
+    EXPECT_ARG_STRING(0);
+
+    const char* str = AS_CSTRING(ARG(0));
+
+    int result = remove(str);
+
+    RETURN_VALUE(INT_VALUE(result));
+}
+
+static void PrintCallFrame(KTN_VM* vm, const KTN_CallFrame* frame) {
     KTN_ObjShiki* function = frame->closure->function;
     size_t ipOffset = (size_t)(frame->ip - function->chunk.code);
     int slotIndex = (int)(frame->slots - vm->stack);
@@ -817,12 +828,6 @@ void VMInit(KTN_VM* vm) {
     TableInit(&vm->globals);
     TableInit(&vm->modules);
 
-    TableInit(&vm->stringMethods);
-    TableInit(&vm->arrayMethods);
-    TableInit(&vm->mapMethods);
-    TableInit(&vm->fileMethods);
-    TableInit(&vm->bytesMethods);
-
     KTN_WellKnownNamesInit(vm, &vm->wellKnownNames);
 
     KTN_DescriptorSetInit(&vm->typeDescriptors);
@@ -850,14 +855,9 @@ void VMFree(KTN_VM* vm) {
         TableFree(vm, &vm->modules);
         TableFree(vm, &vm->globals);
 
-        TableFree(vm, &vm->stringMethods);
-        TableFree(vm, &vm->arrayMethods);
-        TableFree(vm, &vm->mapMethods);
-        TableFree(vm, &vm->fileMethods);
-        TableFree(vm, &vm->bytesMethods);
-
         KTN_DescriptorSetFree(vm, &vm->typeDescriptors);
-        TableFree(vm, &vm->globalTypes);
+        TableFree(vm, &vm->compilerState.globalTypes);
+        TableFree(vm, &vm->compilerState.declaredGlobals);
     }
 
     TableFree(vm, &vm->strings);
@@ -3122,12 +3122,12 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 }
 
 void registerModuleFile(KTN_VM* vm, KTN_ObjModule* module) {
-    Push(vm, OBJECT_VALUE(StringCopy(vm, "ktnIsMain", 6)));
+    Push(vm, OBJECT_VALUE(STRING_COPY("ktnIsMain")));
     Push(vm, BOOL_VALUE(module->isMain));
     TableSet(vm, &module->values, AS_STRING(Peek(vm, 1)), Peek(vm, 0));
     PopN(vm, 2);
 
-    Push(vm, OBJECT_VALUE(StringCopy(vm, "ktnFile", 6)));
+    Push(vm, OBJECT_VALUE(STRING_COPY("ktnFile")));
     if (module->file)
         Push(vm, OBJECT_VALUE(StringCopy(vm, module->file, (int)strlen(module->file))));
     else
@@ -3139,8 +3139,22 @@ void registerModuleFile(KTN_VM* vm, KTN_ObjModule* module) {
 
 void registerRoot(KTN_VM* vm) {
     if (!vm->rootFile) return;
-    Push(vm, OBJECT_VALUE(StringCopy(vm, "ktRoot", 6)));
+    Push(vm, OBJECT_VALUE(STRING_COPY("ktnRoot")));
     Push(vm, OBJECT_VALUE(StringCopy(vm, vm->rootFile, (int)strlen(vm->rootFile))));
+    TableSet(vm, &vm->globals, AS_STRING(Peek(vm, 1)), Peek(vm, 0));
+    PopN(vm, 2);
+}
+
+void registerStdArgs(KTN_VM* vm) {
+    Push(vm, OBJECT_VALUE(STRING_COPY("ktnArgs")));
+    Push(vm, OBJECT_VALUE(ArrayNew(vm)));
+
+    KTN_ObjArray* array = AS_ARRAY(Peek(vm, 0));
+
+    for (int i = 0; i < vm->stdArgsCount; i++) {
+        KTN_ArrayAdd(vm, array, OBJECT_VALUE(STRING_COPY(vm->stdArgs[i])));
+    }
+
     TableSet(vm, &vm->globals, AS_STRING(Peek(vm, 1)), Peek(vm, 0));
     PopN(vm, 2);
 }
@@ -3173,6 +3187,7 @@ KTN_InterpretResult KTN_Interpret(KTN_VM* vm, KTN_ObjModule* module, const char*
     Push(vm, OBJECT_VALUE(closure));
 
     registerModuleFile(vm, module);
+    registerStdArgs(vm);
 
     Call(vm, closure, 0, NULL);
 

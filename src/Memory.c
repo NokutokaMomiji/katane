@@ -445,24 +445,22 @@ static void MarkRoots(KTN_VM* vm) {
 
     KTN_WellKnownNamesMark(vm, &vm->wellKnownNames);
 
-    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->initString);            // ADD
-    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->exceptionClass);        // ADD
-    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->stackTraceClass);       // ADD
-    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeInt);               // ADD
-    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeFloat);             // ADD
-    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeBool);              // ADD
-    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeString);            // ADD
+    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->initString);
+    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->exceptionClass);
+    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->stackTraceClass);
+    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeInt);
+    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeFloat);
+    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeBool);
+    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeString);
     KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeNull);
+    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeArray);
+    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeMap);
 
     TableMark(vm, &vm->globals);
     TableMark(vm, &vm->modules);
-    TableMark(vm, &vm->stringMethods);                                // ADD
-    TableMark(vm, &vm->arrayMethods);                                 // ADD
-    TableMark(vm, &vm->mapMethods);                                   // ADD
-    TableMark(vm, &vm->fileMethods);                                  // ADD
-    TableMark(vm, &vm->bytesMethods);
     KTN_DescriptorSetMark(vm, &vm->typeDescriptors);
-    TableMark(vm, &vm->globalTypes);
+    TableMark(vm, &vm->compilerState.globalTypes);
+    TableMark(vm, &vm->compilerState.declaredGlobals);
     KTN_CompilerMarkRoots();
 }
 

@@ -67,13 +67,7 @@ struct KTN_VM {
 
     KTN_Table strings;
     KTN_Table globals;
-    KTN_Table modules;
-
-    KTN_Table stringMethods;
-    KTN_Table arrayMethods;
-    KTN_Table mapMethods;
-    KTN_Table fileMethods;
-    KTN_Table bytesMethods;
+    KTN_Table modules; // TODO: Replace with ModuleManager
 
     KTN_DescriptorSet typeDescriptors;
     KTN_CompilerState compilerState;
