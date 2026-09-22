@@ -1978,8 +1978,7 @@ static void CompilerLambda(bool canAssign) {
     CompilerFunction(TYPE_LAMBDA, false);
 }
 
-static void CompilerInitProperty(bool isPrivate, bool isHidden, bool isStatic,
-                                                                  bool isFinal) {
+static void CompilerInitProperty(bool isPrivate, bool isHidden, bool isStatic, bool isFinal) {
     CompilerConsume(TOKEN_IDENTIFIER, "Expected property name after \"mochi\"");
     uint32_t name = IdentifierConstant(&parser.previous);
     uint8_t flags = isFinal ? KTN_TABLE_ENTRY_FINAL : 0;

@@ -1958,6 +1958,24 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 KTN_Value typeDescriptor = READ_CONSTANT_LONG();
                 uint8_t flags = READ_BYTE();
 
+                if (!IS_TYPE_DESCRIPTOR(typeDescriptor)) {
+                    KTN_VMPanic(vm, "Type descriptor object is not a type descriptor in OP_INIT_PROPERTY_TYPED");
+                }
+
+                KTN_ObjTypeDescriptor* descriptor = AS_TYPE_DESCRIPTOR(typeDescriptor);
+
+                if (!KTN_TypeDescriptorCheck(vm, Peek(vm, 0), descriptor)) {
+                    char expectedBuffer[256];
+
+                    KTN_TypeDescriptorFormat(descriptor, expectedBuffer, sizeof(expectedBuffer));
+
+                    if (!KTN_ThrowTypeError(vm, expectedBuffer, KTN_ValueTypeName(Peek(vm, 0)), "Property type error"))
+                        return RUNTIME_ERROR(NULL_VALUE);
+
+                    vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                    break;
+                }
+
                 if (isStatic) {
                     if (TableContains(&kata->staticProperties, name)) {
                         if (!KATANE_RUNTIME_ERROR("Duplicate property \"%s\" on kata \"%s\".", COLOR_MAGENTA "Tsk tsk~" COLOR_RESET " You already gave me a \"%s\" property on \"%s\"... I don't like sharing my private spots, darling~ ♡", name->chars, kata->className->chars))

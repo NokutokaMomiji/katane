@@ -456,6 +456,11 @@ static void ObjectStringify(StringBuilder* sb, KTN_Value value, VisitedSet* visi
 
 static void ValueRepr(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
 #ifdef NAN_BOXING
+    if (IS_EMPTY(value)) {
+        SBAppendCStr(sb, "<empty>");
+        return;
+    }
+    
     if (IS_BOOL(value)) {
         SBAppendCStr(sb, AS_BOOL(value) ? "true" : "false");
         return;
@@ -535,6 +540,11 @@ static void ValueRepr(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
 
 static void ValueStringify(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
 #ifdef NAN_BOXING
+    if (IS_EMPTY(value)) {
+        SBAppendCStr(sb, "<empty>");
+        return;
+    }
+
     if (IS_BOOL(value)) {
         SBAppendCStr(sb, AS_BOOL(value) ? "true" : "false");
         return;
@@ -922,7 +932,7 @@ KTN_ObjString* ObjectToString(KTN_VM* vm, KTN_Value value) {
     return result;
 }
 
-// Prints a value to stdout. Cycle-safe for arrays and maps.
+/// Prints a value to stdout. Cycle-safe for arrays and maps.
 void ObjectPrint(KTN_Value value) {
     StringBuilder sb;
     VisitedSet visited;
