@@ -6,16 +6,23 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+typedef enum {
+    KTN_BUFFER_LE,
+    KTN_BUFFER_BE
+} KTN_BufferEndianness;
+
 typedef struct {
     uint8_t* buffer;
     size_t count;
     size_t capacity;
+    KTN_BufferEndianness endianness;
 } KTN_Buffer;
 
-void KTN_BufferInit(KTN_Buffer* buffer) {
+void KTN_BufferInit(KTN_Buffer* buffer, KTN_BufferEndianness endianness) {
     buffer->buffer = NULL;
     buffer->count = 0;
     buffer->capacity = 0;
+    buffer->endianness = endianness;
 }
 
 void KTN_BufferFree(KTN_Buffer* buffer) {
@@ -108,7 +115,11 @@ static inline bool KTN_BufferWriteS8(KTN_Buffer* buffer, int8_t value) {
 
 static inline bool KTN_BufferWriteU16(KTN_Buffer* buffer, uint16_t value) {
     if (!KTN_BufferReserve(buffer, 2)) return false;
-
+    if (buffer->endianness == KTN_BUFFER_LE) {
+        buffer->buffer[buffer->count++] = (value & 0xFF);
+        buffer->buffer[buffer->count++] = (value >> 8) & 0xFF;
+        return true;
+    }
     buffer->buffer[buffer->count++] = (value >> 8) & 0xFF;
     buffer->buffer[buffer->count++] = (value & 0xFF);
 
