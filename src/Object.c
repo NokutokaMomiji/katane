@@ -705,12 +705,16 @@ KTN_ObjNative* NativeNew(KTN_VM* vm, NativeFnEx function, const char* name, cons
 
 KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString* name, KTN_ObjTypeDescriptor* returnType, const KTN_SignatureParameterSpec* parameters, int parameterCount, KTN_ShikiType shikiType) {
     KTN_ObjSignature* signature = ALLOCATE_OBJ(KTN_ObjSignature, OBJ_SIGNATURE);
+
     signature->display = display;
     signature->name = name;
     signature->returnType = returnType;
     signature->parameterCount = parameterCount;
     signature->shikiType = shikiType;
     signature->parameters = NULL;
+    signature->positionalCount = 0;
+    signature->hasVariadic = false;
+    signature->namedStart = parameterCount;
 
     Push(vm, OBJECT_VALUE(signature));
 
@@ -718,12 +722,26 @@ KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString
         signature->parameters = ALLOCATE(KTN_SignatureParameter, parameterCount);
 
         for (int i = 0; i < parameterCount; i++) {
-            signature->parameters[i].name = StringCopy(vm, parameters[i].start, parameters[i].length);
-            signature->parameters[i].type = parameters[i].type;
-            signature->parameters[i].hasDefaultValue = parameters[i].hasDefaultValue;
-            signature->parameters[i].isNamed = parameters[i].isNamed;
-            signature->parameters[i].defaultValue = parameters[i].defaultValue;
+            KTN_SignatureParameter* destinationParameter = &signature->parameters[i];
+            const KTN_SignatureParameterSpec* specParameter = &parameters[i];
+
+            destinationParameter->name = STRING_COPY(vm, specParameter->start, specParameter->length);
+            destinationParameter->type = specParameter->type;
+            destinationParameter->hasDefaultValue = specParameter->hasDefaultValue;
+            destinationParameter->isNamed = specParameter->isNamed;
+            destinationParameter->kind = specParameter->kind;
+            destinationParameter->defaultValue = specParameter->defaultValue;
+            destinationParameter->defaultIsImmutable = specParameter->defaultIsImmutable;
+            
+            if (destinationParameter->kind != KTN_PARAM_POSITIONAL) {
+                signature->hasVariadic |= (destinationParameter->kind == KTN_PARAM_NAMED);
+                continue;
+            }
+
+            signature->positionalCount++;
         }
+
+        signature->namedStart = (signature->hasVariadic) ? signature->positionalCount + 1 : signature->positionalCount;
     }
 
     Pop(vm);
@@ -744,16 +762,18 @@ KTN_ObjTypeDescriptor* TypeDescriptorNew(KTN_VM* vm) {
     return newDescriptor;
 }
 
-static KTN_ObjString* StringAllocate(KTN_VM* vm, char* chars, int length, uint32_t hash) {
+static KTN_ObjString* StringAllocate(KTN_VM* vm, char* chars, int length, uint32_t hash, bool intern) {
     KTN_ObjString* string = ALLOCATE_OBJ(KTN_ObjString, OBJ_STRING);
     string->length = length;
     string->charLength = Utf8StrnCpLen(chars, length); // codepoint count
     string->chars = chars;
     string->hash = hash;
 
-    Push(vm, OBJECT_VALUE(string));
-    TableSet(vm, &vm->strings, string, NULL_VALUE);
-    Pop(vm);
+    if (intern) {
+        Push(vm, OBJECT_VALUE(string));
+        TableSet(vm, &vm->strings, string, NULL_VALUE);
+        Pop(vm);
+    }
 
     return string;
 }
@@ -762,7 +782,16 @@ static KTN_ObjString* StringAllocate(KTN_VM* vm, char* chars, int length, uint32
 static uint32_t StringHash(const char* key, int length) {
     uint32_t hash = 2166136261u;
 
-    for (int i = 0; i < length; i++) {
+    int step = 1;
+
+    if (length > 256) {
+        // Bitshifting to the left 'n' spaces is akin to dividing by 2^n.
+        // This divides the string into 128 intervals. 
+        // Helpful when you have... say... a **2 million lines JSON file**
+        step = (length >> 7) | 1;
+    }
+
+    for (int i = 0; i < length; i += step) {
         hash ^= (uint8_t)key[i];
         hash *= 16777619;
     }
@@ -776,7 +805,7 @@ static uint32_t StringHash(const char* key, int length) {
     return hash;
 }
 
-KTN_ObjString* StringTake(KTN_VM* vm, char* chars, int length) {
+KTN_ObjString* StringTake(KTN_VM* vm, char* chars, int length, bool intern) {
     uint32_t hash = StringHash(chars, length);
     KTN_ObjString* interned = TableFindString(&vm->strings, chars, length, hash);
     
@@ -785,10 +814,10 @@ KTN_ObjString* StringTake(KTN_VM* vm, char* chars, int length) {
         return interned;
     }
 
-    return StringAllocate(vm, chars, length, hash);
+    return StringAllocate(vm, chars, length, hash, intern);
 }
 
-KTN_ObjString* StringCopy(KTN_VM* vm, const char* chars, int length) {
+KTN_ObjString* StringCopy(KTN_VM* vm, const char* chars, int length, bool intern) {
     uint32_t hash = StringHash(chars, length);
     KTN_ObjString* interned = TableFindString(&vm->strings, chars, length, hash);
     if (interned != NULL)
@@ -800,7 +829,7 @@ KTN_ObjString* StringCopy(KTN_VM* vm, const char* chars, int length) {
     memcpy(heapChars, chars, length);
 
     heapChars[length] = '\0'; // Because we allocated length + 1, length is the last index.
-    return StringAllocate(vm, heapChars, length, hash);
+    return StringAllocate(vm, heapChars, length, hash, intern);
 }
 
 KTN_ObjUpvalue* UpvalueNew(KTN_VM* vm, KTN_Value* slot) {
@@ -907,8 +936,8 @@ KTN_ObjBoundMethod* BoundMethodNew(KTN_VM* vm, KTN_Value receiver, KTN_ObjClosur
 KTN_ObjAccessor* AccessorNew(KTN_VM* vm) {
     KTN_ObjAccessor* accessor = ALLOCATE_OBJ(KTN_ObjAccessor, OBJ_ACCESSOR);
 
-    accessor->getter = NULL;
-    accessor->setter = NULL;
+    accessor->getter = EMPTY_VALUE;
+    accessor->setter = EMPTY_VALUE;
 
     return accessor;
 }
@@ -923,11 +952,13 @@ KTN_ObjString* ObjectToString(KTN_VM* vm, KTN_Value value) {
     VisitedSet visited;
     visited.count = 0;
     ValueStringify(&sb, value, &visited);
+    
+    char* buffer = SBDetach(&sb);
 
     // StringCopy interns the string and owns its own copy.
     // SBFree then releases the temporary builder buffer.
-    KTN_ObjString* result = StringCopy(vm, sb.buffer ? sb.buffer : "", sb.length);
-    SBFree(&sb);
+    KTN_ObjString* result = (buffer) ? StringTake(vm, buffer, strlen(buffer), false) 
+                                     : StringCopy(vm, "", 0, false);
 
     return result;
 }

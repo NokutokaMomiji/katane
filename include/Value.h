@@ -48,7 +48,7 @@ typedef uint64_t KTN_Value;
 
 #define AS_BOOL(value)      ((value) == TRUE_VALUE)
 #define AS_INT(value)       ((int32_t)((value) & 0xFFFFFFFFULL))
-#define AS_DOUBLE(value)    valueToDouble(value)
+#define AS_DOUBLE(value)    (ValueToDouble(value))
 #define AS_NUMERIC(value)   (IS_INT(value) ? (double)AS_INT(value) : AS_DOUBLE(value))
 #define AS_OBJECT(value)    ((KTN_Object*)(uintptr_t)((value) & ~(SIGN_BIT | QNAN)))
 
@@ -57,17 +57,17 @@ typedef uint64_t KTN_Value;
 #define TRUE_VALUE          ((KTN_Value)(uint64_t)(QNAN | TAG_TRUE))
 #define EMPTY_VALUE         ((KTN_Value)(uint64_t)(QNAN | TAG_EMPTY))
 #define BOOL_VALUE(value)   ((value) ? TRUE_VALUE : FALSE_VALUE)
-#define DOUBLE_VALUE(num)   doubleToValue(num)
+#define DOUBLE_VALUE(num)   (DoubleToValue(num))
 #define INT_VALUE(num)      ((KTN_Value)(QNAN | TAG_INT | (uint64_t)(uint32_t)(int32_t)(num)))
-#define OBJECT_VALUE(value) (KTN_Value)(SIGN_BIT | QNAN | (uint64_t)(uintptr_t)(value))
+#define OBJECT_VALUE(value) ((KTN_Value)(SIGN_BIT | QNAN | (uint64_t)(uintptr_t)(value)))
 
-static inline double valueToDouble(KTN_Value value) {
+static inline double ValueToDouble(KTN_Value value) {
     double num;
     memcpy(&num, &value, sizeof(KTN_Value));
     return num;
 }
 
-static inline KTN_Value doubleToValue(double num) {
+static inline KTN_Value DoubleToValue(double num) {
     KTN_Value value;
     memcpy(&value, &num, sizeof(double));
     return value;
@@ -116,8 +116,13 @@ typedef struct {
 
 #endif
 
-#define STRING_VALUE(value) OBJECT_VALUE(StringCopy(vm, value, (int)strlen(value)))
-#define STRING_COPY(value) StringCopy(vm, value, (int)strlen(value))
+#define STRING_VALUE(value) OBJECT_VALUE(StringCopy(vm, value, (int)strlen(value), true))
+#define STRING_COPY_AUTO(value) StringCopy(vm, value, (int)strlen(value), true)
+
+#define STRING_COPY(vm, value, length) StringCopy(vm, value, length, true)
+#define STRING_TAKE(vm, value, length) StringTake(vm, value, length, true)
+#define STRING_COPY_RAW(vm, value, length) StringCopy(vm, value, length, false)
+#define STRING_TAKE_RAW(vm, value, length) StringCopy(vm, value, length, false)
 
 typedef struct {
     uint32_t capacity;   // Contains the full capacity of the array.

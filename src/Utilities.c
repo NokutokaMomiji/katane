@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "Utilities.h"
+#include "Memory.h"
 #include "Utf8.h"
 
 bool IsDigit(char digit) {
@@ -152,14 +153,14 @@ void SBInit(StringBuilder* sb) {
 void SBEnsure(StringBuilder* sb, int extra) {
     if (sb->length + extra + 1 <= sb->capacity) return;
 
-    int newCap = sb->capacity == 0 ? 64 : sb->capacity * 2;
+    int newCapacity = (sb->capacity == 0) ? 64 : sb->capacity * 2;
     
-    while (newCap < sb->length + extra + 1) {
-        newCap *= 2;
+    while (newCapacity < sb->length + extra + 1) {
+        newCapacity *= 2;
     }
     
-    sb->buffer = realloc(sb->buffer, newCap);
-    sb->capacity = newCap;
+    sb->buffer = realloc(sb->buffer, newCapacity);
+    sb->capacity = newCapacity;
 }
 
 void SBAppend(StringBuilder* sb, const char* str, int length) {
@@ -173,9 +174,28 @@ void SBAppendCStr(StringBuilder* sb, const char* str) {
     SBAppend(sb, str, (int)strlen(str));
 }
 
-void SBFree(StringBuilder* sb) {
-    free(sb->buffer);
+char* SBDetach(StringBuilder *sb) {
+    char* buffer = sb->buffer;
+
+    if (!buffer) {
+        buffer = malloc(1);
+        if (!buffer) return NULL;
+        buffer[0] = '\0';
+    }
+
     sb->buffer = NULL;
+    sb->length = 0;
+    sb->capacity = 0;
+
+    return buffer;
+}
+
+void SBFree(StringBuilder* sb) {
+    if (sb->buffer) {
+        free(sb->buffer);
+        sb->buffer = NULL;
+    }
+
     sb->length = 0;
     sb->capacity = 0;
 }
@@ -399,3 +419,87 @@ char* ProcessEscapes(const char* source, int sourceLength, int* outLength) {
 
     return builder.buffer;
 }
+
+// From eiszapfen2000 on Github (https://github.com/eiszapfen2000/asprintf/blob/master/asprintf.c)
+// THANK YOU! (and fuck you too Windows.)
+#if defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64)
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <errno.h>
+
+#if _MSC_VER < 1800
+#undef va_copy
+#define va_copy(dst, src) (dst = src)
+#endif
+
+#ifndef EOTHER
+#define EOTHER 131
+#endif
+
+#ifdef __cplusplus
+extern "C"
+#endif
+int vasprintf(char** strp, const char* fmt, va_list ap)
+{
+    va_list ap_copy;
+    int formattedLength, actualLength;
+    size_t requiredSize;
+
+    // be paranoid
+    *strp = NULL;
+
+    // copy va_list, as it is used twice 
+    va_copy(ap_copy, ap);
+
+    // compute length of formatted string, without NULL terminator
+    formattedLength = _vscprintf(fmt, ap_copy);
+    va_end(ap_copy);
+
+    // bail out on error
+    if (formattedLength < 0)
+    {
+        return -1;
+    }
+
+    // allocate buffer, with NULL terminator
+    requiredSize = ((size_t)formattedLength) + 1;
+    *strp = (char*)malloc(requiredSize);
+
+    // bail out on failed memory allocation
+    if (*strp == NULL)
+    {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    // write formatted string to buffer, use security hardened _s function
+    actualLength = vsnprintf_s(*strp, requiredSize, requiredSize - 1, fmt, ap);
+
+    // again, be paranoid
+    if (actualLength != formattedLength)
+    {
+        free(*strp);
+        *strp = NULL;
+        errno = EOTHER;
+        return -1;
+    }
+
+    return formattedLength;
+}
+
+#ifdef __cplusplus
+extern "C"
+#endif
+int asprintf(char** strp, const char* fmt, ...)
+{
+    int result;
+
+    va_list ap;
+    va_start(ap, fmt);
+    result = vasprintf(strp, fmt, ap);
+    va_end(ap);
+
+    return result;
+}
+#endif

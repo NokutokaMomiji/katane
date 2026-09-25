@@ -11,14 +11,14 @@ KTN_NativeKataBuilder* KTN_BeginNativeClass(KTN_VM* vm, const char* name, const 
     KTN_NativeKataBuilder* builder = malloc(sizeof(KTN_NativeKataBuilder));
     builder->vm = vm;
 
-    KTN_ObjString* className = STRING_COPY(name);
+    KTN_ObjString* className = STRING_COPY_AUTO(name);
     Push(vm, OBJECT_VALUE(className));
     KTN_ObjKata* newClass = KataNew(vm, className);
     Push(vm, OBJECT_VALUE(newClass));
 
     if (superclassName != NULL) {
         KTN_Value superclassValue;
-        KTN_ObjString* superclassKey = STRING_COPY(superclassName);
+        KTN_ObjString* superclassKey = STRING_COPY_AUTO(superclassName);
         Push(vm, OBJECT_VALUE(superclassKey));
 
         if (TableGet(&vm->globals, superclassKey, &superclassValue) && IS_CLASS(superclassValue)) {
@@ -58,7 +58,7 @@ KTN_ObjKata* KTN_EndNativeClass(KTN_NativeKataBuilder* builder) {
 
 void KTN_AddNativeMethod(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs) {
     KTN_VM* vm = builder->vm;
-    KTN_ObjString* methodName = StringCopy(vm, name, (int)strlen(name));
+    KTN_ObjString* methodName = STRING_COPY(vm, name, (int)strlen(name));
     Push(vm, OBJECT_VALUE(methodName));
     KTN_ObjNative* nativeObj = NativeNew(vm, function, name, signature, docs);
     Push(vm, OBJECT_VALUE(nativeObj));
@@ -81,7 +81,7 @@ void KTN_SetNativeConstructor(KTN_NativeKataBuilder* builder, NativeFnEx functio
 void KTN_AddNativeGetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs) {
     KTN_VM* vm = builder->vm;
     KTN_Table* methods = &builder->builtClass->methods;
-    KTN_ObjString* key = STRING_COPY(name);
+    KTN_ObjString* key = STRING_COPY_AUTO(name);
     KTN_Value existing;
     KTN_ObjAccessor* accessor;
 
@@ -92,13 +92,13 @@ void KTN_AddNativeGetter(KTN_NativeKataBuilder* builder, const char* name, Nativ
         TableSet(vm, methods, key, OBJECT_VALUE(accessor));
     }
 
-    accessor->getter = (KTN_ObjClosure*)NativeNew(vm, function, name, signature, docs);
+    accessor->getter = OBJECT_VALUE((KTN_ObjNative*)NativeNew(vm, function, name, signature, docs));
 }
 
 void KTN_AddNativeSetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs) {
     KTN_VM* vm = builder->vm;
     KTN_Table* methods = &builder->builtClass->methods;
-    KTN_ObjString* key = STRING_COPY(name);
+    KTN_ObjString* key = STRING_COPY_AUTO(name);
     KTN_Value existing;
     KTN_ObjAccessor* accessor;
 
@@ -109,19 +109,19 @@ void KTN_AddNativeSetter(KTN_NativeKataBuilder* builder, const char* name, Nativ
         TableSet(vm, methods, key, OBJECT_VALUE(accessor));
     }
 
-    accessor->setter = (KTN_ObjClosure*)NativeNew(vm, function, name, signature, docs);
+    accessor->setter = OBJECT_VALUE(NativeNew(vm, function, name, signature, docs));
 }
 
 void KTN_AddNativeStaticMethod(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs) {
     KTN_VM* vm = builder->vm;
     KTN_ObjNative* native = NativeNew(vm, function, name, signature, docs);
-    TableSet(vm, &builder->builtClass->staticMethods, STRING_COPY(name), OBJECT_VALUE(native));
+    TableSet(vm, &builder->builtClass->staticMethods, STRING_COPY_AUTO(name), OBJECT_VALUE(native));
 }
 
 void KTN_AddNativeStaticGetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs) {
     KTN_VM* vm = builder->vm;
     KTN_Table* methods = &builder->builtClass->staticMethods;
-    KTN_ObjString* key = STRING_COPY(name);
+    KTN_ObjString* key = STRING_COPY_AUTO(name);
     KTN_Value existing;
     KTN_ObjAccessor* accessor;
 
@@ -132,13 +132,13 @@ void KTN_AddNativeStaticGetter(KTN_NativeKataBuilder* builder, const char* name,
         TableSet(vm, methods, key, OBJECT_VALUE(accessor));
     }
 
-    accessor->getter = (KTN_ObjClosure*)NativeNew(vm, function, name, signature, docs);
+    accessor->getter = OBJECT_VALUE(NativeNew(vm, function, name, signature, docs));
 }
 
 void KTN_AddNativeStaticSetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs) {
     KTN_VM* vm = builder->vm;
     KTN_Table* methods = &builder->builtClass->staticMethods;
-    KTN_ObjString* key = STRING_COPY(name);
+    KTN_ObjString* key = STRING_COPY_AUTO(name);
     KTN_Value existing;
     KTN_ObjAccessor* accessor;
 
@@ -149,17 +149,17 @@ void KTN_AddNativeStaticSetter(KTN_NativeKataBuilder* builder, const char* name,
         TableSet(vm, methods, key, OBJECT_VALUE(accessor));
     }
 
-    accessor->setter = (KTN_ObjClosure*)NativeNew(vm, function, name, signature, docs);
+    accessor->setter = OBJECT_VALUE(NativeNew(vm, function, name, signature, docs));
 }
 
 void KTN_AddNativeStaticProperty(KTN_NativeKataBuilder* builder, const char* name, KTN_Value defaultValue) {
     KTN_VM* vm = builder->vm;
-    TableSet(vm, &builder->builtClass->staticProperties, STRING_COPY(name), defaultValue);
+    TableSet(vm, &builder->builtClass->staticProperties, STRING_COPY_AUTO(name), defaultValue);
 }
 
 void KTN_AddNativeProperty(KTN_NativeKataBuilder* builder, const char* name, KTN_Value defaultValue) {
     KTN_VM* vm = builder->vm;
-    KTN_ObjString* propName = StringCopy(vm, name, (int)strlen(name));
+    KTN_ObjString* propName = STRING_COPY(vm, name, (int)strlen(name));
     Push(vm, OBJECT_VALUE(propName));
     TableSet(vm, &builder->builtClass->properties, propName, defaultValue);
     Pop(vm);
@@ -167,12 +167,12 @@ void KTN_AddNativeProperty(KTN_NativeKataBuilder* builder, const char* name, KTN
 
 void KTN_SetClassDoc(KTN_NativeKataBuilder* builder, const char* docs) {
     KTN_VM* vm = builder->vm;
-    builder->builtClass->docs = STRING_COPY(docs);
+    builder->builtClass->docs = STRING_COPY_AUTO(docs);
 }
 
 void KTN_MarkNativePrivate(KTN_NativeKataBuilder* builder, const char* name) {
     KTN_VM* vm = builder->vm;
-    TableSet(vm, &builder->builtClass->privateMembers, STRING_COPY(name), TRUE_VALUE);
+    TableSet(vm, &builder->builtClass->privateMembers, STRING_COPY_AUTO(name), TRUE_VALUE);
 }
 
 void KTN_SetPrivateConstructor(KTN_NativeKataBuilder* builder) {

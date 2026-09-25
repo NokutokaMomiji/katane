@@ -3,6 +3,7 @@
 
 #include "Compiler.h"
 #include "Memory.h"
+#include "Object.h"
 #include "VM.h"
 #include "TypeDescriptor.h"
 
@@ -62,8 +63,10 @@ void KTN_MemoryMarkObject(KTN_VM* vm, KTN_Object* object) {
             free(vm->safeguardStack);
             vm->grayStack = (KTN_Object**)realloc(vm->grayStack, sizeof(KTN_Object*) * vm->grayCapacity);
 
-            if (vm->grayStack == NULL)
+            if (vm->grayStack == NULL) {
+                fprintf(stderr, "[ERROR]: Out of memory.\n");
                 exit(1);
+            }
         }
         else if (vm->grayStack == NULL)
             exit(1);
@@ -253,9 +256,12 @@ static void BlackenObject(KTN_VM* vm, KTN_Object* object) {
 
         case OBJ_NATIVE:
         case OBJ_STRING:
+            KTN_MemoryMarkObject(vm, object);
+        case OBJ_POINTER:
             break;
 
-        
+        default:
+            KTN_VMPanic(vm, "[BlackenObject]: Object %d has no blackening handler.", object);
     }
 }
 
@@ -338,9 +344,16 @@ static void FreeObject(KTN_VM* vm, KTN_Object* object) {
         case OBJ_ACCESSOR: {
             KTN_ObjAccessor* accessor = (KTN_ObjAccessor*)object;
             
-            FREE(KTN_ObjClosure, accessor->getter);
-            FREE(KTN_ObjClosure, accessor->setter);
-            
+            if (IS_CLOSURE(accessor->getter))
+                FREE(KTN_ObjClosure, AS_CLOSURE(accessor->getter));
+            else if (IS_NATIVE(accessor->getter))
+                FREE(KTN_ObjNative, AS_NATIVE(accessor->getter));
+
+            if (IS_CLOSURE(accessor->setter))
+                FREE(KTN_ObjClosure,AS_CLOSURE(accessor->setter));
+            else if (IS_NATIVE(accessor->getter))
+                FREE(KTN_ObjNative, AS_NATIVE(accessor->setter));
+
             FREE(KTN_ObjAccessor, accessor);
             break;
         }
@@ -400,14 +413,22 @@ static void FreeObject(KTN_VM* vm, KTN_Object* object) {
         case OBJ_BOUND_METHOD:
             FREE(KTN_ObjBoundMethod, object);
             break;
+
+        case OBJ_POINTER: break;
+
+        default:
+            KTN_VMPanic(vm, "[FreeObject]: Object %d has no freeing handler.", object->type);
     }
 }
 
 void KTN_MemoryFreeObjects(KTN_VM* vm) {
     KTN_Object* object = vm->objects;
+
     while (object != NULL) {
         KTN_Object* next = object->next;
+    
         FreeObject(vm, object);
+    
         object = next;
     }
 

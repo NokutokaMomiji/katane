@@ -32,7 +32,7 @@ typedef struct {
     size_t count;
     size_t capacity;
     size_t cursor;
-    bool error;
+    KTN_BufferError error;
     KTN_BufferEndianness endianness;
     KTN_BufferType type;
 } KTN_Buffer;
@@ -134,16 +134,6 @@ static inline bool KTN_BufferShrink(KTN_Buffer* buffer) {
 
     buffer->buffer = newBuffer;
     buffer->capacity = buffer->count;
-
-    return true;
-}
-
-static inline bool KTN_BufferAlign(KTN_Buffer* buffer, size_t alignment) {
-    size_t pad = (alignment - (buffer->count % alignment)) % alignment;
-
-    for (size_t i = 0; i < pad; i++) {
-        if (!KTN_BufferWriteU8(buffer, 0)) return false;
-    }
 
     return true;
 }
@@ -417,6 +407,16 @@ static inline char* KTN_BufferReadString(KTN_Buffer* buffer, size_t* outLength) 
 
 static inline bool KTN_BufferReadBool(KTN_Buffer* buffer) {
     return KTN_BufferReadU8(buffer);
+}
+
+static inline bool KTN_BufferAlign(KTN_Buffer* buffer, size_t alignment) {
+    size_t pad = (alignment - (buffer->count % alignment)) % alignment;
+
+    for (size_t i = 0; i < pad; i++) {
+        if (!KTN_BufferWriteU8(buffer, 0)) return false;
+    }
+
+    return true;
 }
 
 #endif

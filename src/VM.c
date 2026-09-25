@@ -1,5 +1,6 @@
 #include "HashMap.h"
 #include "TypeDescriptor.h"
+#include "Value.h"
 #define _GNU_SOURCE
 #include <stdarg.h>
 #include <stdio.h>
@@ -22,6 +23,8 @@
 #include "Platform.h"
 #include "Tutorial.h"
 #include "VM.h"
+
+
 
 // Forward declarations for helpers defined later in this file.
 void registerModuleFile(KTN_VM* vm, KTN_ObjModule* module);
@@ -81,7 +84,7 @@ _Static_assert(
 
 void KTN_WellKnownNamesInit(KTN_VM* vm, KTN_WellKnownNames* names) {
     for (int i = 0; i < KTN_NAME_COUNT; i++) {
-        names->values[i] = StringCopy(vm, KTN_WellKnownNameText[i], (int)strlen(KTN_WellKnownNameText[i]));
+        names->values[i] = STRING_COPY(vm, KTN_WellKnownNameText[i], (int)strlen(KTN_WellKnownNameText[i]));
     }
 }
 
@@ -313,7 +316,7 @@ bool KTN_RuntimeError(KTN_VM* vm, const char* format, ...) {
     int length = vasprintf(&message, format, args);
     va_end(args);
 
-    Push(vm, OBJECT_VALUE(StringTake(vm, message, length)));
+    Push(vm, OBJECT_VALUE(StringTake(vm, message, length, true)));
     KTN_ObjInstance* exception = KTN_ExceptionCreate(vm, "RuntimeError", AS_STRING(Peek(vm, 0)));
     Pop(vm);
 
@@ -330,7 +333,7 @@ bool KTN_ThrowException(KTN_VM* vm, const char* type, bool isAssert, const char*
     va_end(args);
 
     const char* exceptionType = (isAssert) ? "AssertionError" : type;
-    KTN_ObjInstance* exception = KTN_ExceptionCreate(vm, exceptionType, StringTake(vm, message, length));
+    KTN_ObjInstance* exception = KTN_ExceptionCreate(vm, exceptionType, STRING_TAKE(vm, message, length));
 
     return KTN_ThrowValue(vm, exception, true);
 }
@@ -338,7 +341,7 @@ bool KTN_ThrowException(KTN_VM* vm, const char* type, bool isAssert, const char*
 bool KTN_ThrowTypeError(KTN_VM* vm, const char* expectedBuffer, const char* actualName, const char* context) {
     char msgBuffer[512];
     snprintf(msgBuffer, sizeof(msgBuffer), "%s: expected %s, got %s.", context, expectedBuffer, actualName);
-    KTN_ObjString* message = StringCopy(vm, msgBuffer, (int)strlen(msgBuffer));
+    KTN_ObjString* message = STRING_COPY(vm, msgBuffer, (int)strlen(msgBuffer));
     Push(vm, OBJECT_VALUE(message));
     KTN_ObjInstance* exception = KTN_ExceptionCreate(vm, "TypeError", message);
     
@@ -360,7 +363,7 @@ static KTN_ObjKata* PrimitiveClassOf(KTN_VM* vm, KTN_Value value) {
     return NULL;
 }
 static void DefineNative(KTN_VM* vm, const char* name, NativeFnEx function, const char* signature, const char* docs) {
-    Push(vm, OBJECT_VALUE(StringCopy(vm, name, (int)strlen(name))));
+    Push(vm, OBJECT_VALUE(STRING_COPY(vm, name, (int)strlen(name))));
     Push(vm, OBJECT_VALUE(NativeNew(vm, function, name, signature, docs)));
     TableSet(vm, &vm->globals, AS_STRING(Peek(vm, 1)), Peek(vm, 0));
     PopN(vm, 2);
@@ -398,7 +401,7 @@ static DECLARE_NATIVE(Input) {
         input[0] = '\0';
     input[strcspn(input, "\n")] = '\0';
 
-    return (KTN_NativeResult){true, OBJECT_VALUE(StringCopy(vm, input, (int)strlen(input)))};
+    return (KTN_NativeResult){true, OBJECT_VALUE(STRING_COPY(vm, input, (int)strlen(input)))};
 }
 
 static DECLARE_NATIVE(Clock) {
@@ -424,7 +427,7 @@ static DECLARE_NATIVE(ReadFile) {
         RETURN_ERROR(NULL_VALUE);
     }
 
-    KTN_ObjString* fileString = StringTake(vm, file, size);
+    KTN_ObjString* fileString = StringTake(vm, file, size, false);
 
     RETURN_VALUE(OBJECT_VALUE(fileString));
 }
@@ -583,13 +586,19 @@ static DECLARE_NATIVE(Help) {
             if (IS_ACCESSOR(entry->value)) {
                 KTN_ObjAccessor* accessor = AS_ACCESSOR(entry->value);
 
-                if (accessor->getter != NULL && accessor->getter->function->signature != NULL &&
-                        accessor->getter->function->signature->display != NULL)
-                    printf("   " COLOR_CYAN "get" COLOR_RESET " %s\n", accessor->getter->function->signature->display->chars);
+                if (IS_CLOSURE(accessor->getter)) {
+                    KTN_ObjClosure* getter = AS_CLOSURE(accessor->getter);
 
-                if (accessor->setter != NULL && accessor->setter->function->signature != NULL &&
-                        accessor->setter->function->signature->display != NULL)
-                    printf("   " COLOR_CYAN "set" COLOR_RESET " %s\n", accessor->setter->function->signature->display->chars);
+                    if (getter->function->signature != NULL && getter->function->signature->display != NULL)
+                        printf("   " COLOR_CYAN "get" COLOR_RESET " %s\n", getter->function->signature->display->chars);
+                }
+
+                if (IS_CLOSURE(accessor->setter)) {
+                    KTN_ObjClosure* setter = AS_CLOSURE(accessor->setter);
+                    
+                    if (setter->function->signature != NULL && setter->function->signature->display != NULL)
+                        printf("   " COLOR_CYAN "set" COLOR_RESET " %s\n", setter->function->signature->display->chars);
+                }
 
                 continue;
             }
@@ -1109,13 +1118,13 @@ static bool BindMethod(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name) {
     if (IS_ACCESSOR(method)) {
         KTN_ObjAccessor* accessor = AS_ACCESSOR(method);
 
-        if (accessor->getter == NULL) {
+        if (IS_EMPTY(accessor->getter)) {
             if (!ThrowException(vm, "PropertyError", false, "Kata \"%s\" has no getter \"%s\".", kata->className->chars, name->chars))
                 return false;
             return true;
         }
 
-        if (!CallValue(vm, OBJECT_VALUE(accessor->getter), 0)) {
+        if (!CallValue(vm, accessor->getter, 0)) {
             if (vm->caughtException) {
                 vm->caughtException = false;
                 vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -1253,24 +1262,24 @@ static bool DefineMethod(KTN_VM* vm, KTN_ObjString* name) {
             KTN_ObjAccessor* accessor = AS_ACCESSOR(existing);
 
             if (type == TYPE_GETTER) {
-                if (accessor->getter != NULL) {
+                if (!IS_EMPTY(accessor->getter)) {
                     if (!KTN_RuntimeError(vm, "Duplicate getter \"%s\" for \"%s\".", name->chars, kata->className->chars))
                         return false;
                     return true;
                 }
 
-                accessor->getter = closure;
+                accessor->getter = OBJECT_VALUE(closure);
 
                 Pop(vm);
                 return true;
             } else if (type == TYPE_SETTER) {
-                if (accessor->setter!= NULL) {
+                if (!IS_EMPTY(accessor->setter)) {
                     if (!KTN_RuntimeError(vm, "Duplicate setter \"%s\" for \"%s\".", name->chars, kata->className->chars))
                         return false;
                     return true;
                 }
 
-                accessor->setter = closure;
+                accessor->setter = OBJECT_VALUE(closure);
 
                 Pop(vm);
                 return true;
@@ -1290,9 +1299,9 @@ static bool DefineMethod(KTN_VM* vm, KTN_ObjString* name) {
         KTN_ObjAccessor* accessor = AccessorNew(vm);
 
         if (type == TYPE_GETTER)
-            accessor->getter = closure;
+            accessor->getter = OBJECT_VALUE(closure);
         else if (type == TYPE_SETTER)
-            accessor->setter = closure;
+            accessor->setter = OBJECT_VALUE(closure);
         else
             KTN_VMPanic(vm, "DefineMethod called with function that is neither a closure nor an accessor.");
 
@@ -1349,24 +1358,24 @@ static bool DefineStaticMethod(KTN_VM* vm, KTN_ObjString* name) {
             KTN_ObjAccessor* accessor = AS_ACCESSOR(existing);
 
             if (type == TYPE_GETTER) {
-                if (accessor->getter != NULL) {
+                if (!IS_EMPTY(accessor->getter)) {
                     if (!KTN_RuntimeError(vm, "Duplicate static getter \"%s\" for \"%s\".", name->chars, kata->className->chars))
                         return false;
                     return true;
                 }
 
-                accessor->getter = closure;
+                accessor->getter = OBJECT_VALUE(closure);
 
                 Pop(vm);
                 return true;
             } else if (type == TYPE_SETTER) {
-                if (accessor->setter!= NULL) {
+                if (!IS_EMPTY(accessor->setter)) {
                     if (!KTN_RuntimeError(vm, "Duplicate static setter \"%s\" for \"%s\".", name->chars, kata->className->chars))
                         return false;
                     return true;
                 }
 
-                accessor->setter = closure;
+                accessor->setter = OBJECT_VALUE(closure);
 
                 Pop(vm);
                 return true;
@@ -1386,9 +1395,9 @@ static bool DefineStaticMethod(KTN_VM* vm, KTN_ObjString* name) {
         KTN_ObjAccessor* accessor = AccessorNew(vm);
 
         if (type == TYPE_GETTER)
-            accessor->getter = closure;
+            accessor->getter = OBJECT_VALUE(closure);
         else if (type == TYPE_SETTER)
-            accessor->setter = closure;
+            accessor->setter = OBJECT_VALUE(closure);
         else
             KTN_VMPanic(vm, "DefineStaticMethod called with function that is neither a closure nor an accessor.");
 
@@ -1430,7 +1439,7 @@ static void Concatenate(KTN_VM* vm) {
 
     chars[length] = '\0';
 
-    KTN_ObjString* Result = StringTake(vm, chars, length);
+    KTN_ObjString* Result = StringTake(vm, chars, length, false);
     PopN(vm, 2);
     Push(vm, OBJECT_VALUE(Result));
 }
@@ -1883,7 +1892,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                         char buf[5];
                         int  encLen = Utf8Encode(cp.codepoint, buf);
                         buf[encLen] = '\0';
-                        value = OBJECT_VALUE(StringCopy(vm, buf, encLen));
+                        value = OBJECT_VALUE(STRING_COPY(vm, buf, encLen));
                         break;
                     }
 
@@ -2068,13 +2077,13 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 
                     KTN_ObjAccessor* accessor = AS_ACCESSOR(value);
 
-                    if (accessor->setter == NULL) {
+                    if (IS_EMPTY(accessor->setter)) {
                         if (!ThrowException(vm, "PropertyError", false, "Kata \"%s\" has no static setter for \"%s\".", kata->className->chars, name->chars))
                             return RUNTIME_ERROR(NULL_VALUE);
                         break;
                     }
 
-                    if (!CallValue(vm, OBJECT_VALUE(accessor->setter), 1)) {
+                    if (!CallValue(vm, accessor->setter, 1)) {
                         if (vm->caughtException) {
                             vm->caughtException = false;
                             vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -2145,13 +2154,13 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 
                 KTN_ObjAccessor* accessor = AS_ACCESSOR(value);
 
-                if (accessor->setter == NULL) {
+                if (IS_EMPTY(accessor->setter)) {
                     if (!ThrowException(vm, "PropertyError", false, "Instance of kata \"%s\" has no setter for \"%s\".", instance->kata->className->chars, string->chars))
                         return RUNTIME_ERROR(NULL_VALUE);
                     break;
                 }
 
-                if (!CallValue(vm, OBJECT_VALUE(accessor->setter), 1)) {
+                if (!CallValue(vm, accessor->setter, 1)) {
                     if (vm->caughtException) {
                         vm->caughtException = false;
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -2193,13 +2202,13 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                         if (IS_ACCESSOR(value)) {
                             KTN_ObjAccessor* accessor = AS_ACCESSOR(value);
 
-                            if (accessor->getter == NULL) {
+                            if (IS_EMPTY(accessor->getter)) {
                                 if (!ThrowException(vm, "PropertyError", false, "Kata \"%s\" has no static getter \"%s\".", kata->className->chars, name->chars))
                                     return RUNTIME_ERROR(NULL_VALUE);
                                 break;
                             }
 
-                            if (!CallValue(vm, OBJECT_VALUE(accessor->getter), 0)) {
+                            if (!CallValue(vm, accessor->getter, 0)) {
                                 if (vm->caughtException) {
                                     vm->caughtException = false;
                                     vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3028,7 +3037,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     if (IS_STRING(message)) {
                         messageString = AS_STRING(message);
                     } else {
-                        messageString = StringCopy(vm, "Assertion failed.", 17);
+                        messageString = STRING_COPY(vm, "Assertion failed.", 17);
                     }
 
                     Push(vm, OBJECT_VALUE(messageString));
@@ -3068,7 +3077,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 
                 if (IS_INSTANCE(exceptionValue)) {
                     TableGet(&AS_INSTANCE(exceptionValue)->properties,
-                        STRING_COPY("stackTrace"), &stackTraceValue);
+                        STRING_COPY_AUTO("stackTrace"), &stackTraceValue);
                 }
 
                 Push(vm, stackTraceValue);
@@ -3140,14 +3149,14 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
 }
 
 void registerModuleFile(KTN_VM* vm, KTN_ObjModule* module) {
-    Push(vm, OBJECT_VALUE(STRING_COPY("ktnIsMain")));
+    Push(vm, OBJECT_VALUE(STRING_COPY_AUTO("ktnIsMain")));
     Push(vm, BOOL_VALUE(module->isMain));
     TableSet(vm, &module->values, AS_STRING(Peek(vm, 1)), Peek(vm, 0));
     PopN(vm, 2);
 
-    Push(vm, OBJECT_VALUE(STRING_COPY("ktnFile")));
+    Push(vm, OBJECT_VALUE(STRING_COPY_AUTO("ktnFile")));
     if (module->file)
-        Push(vm, OBJECT_VALUE(StringCopy(vm, module->file, (int)strlen(module->file))));
+        Push(vm, OBJECT_VALUE(STRING_COPY(vm, module->file, (int)strlen(module->file))));
     else
         Push(vm, NULL_VALUE);
 
@@ -3157,20 +3166,20 @@ void registerModuleFile(KTN_VM* vm, KTN_ObjModule* module) {
 
 void registerRoot(KTN_VM* vm) {
     if (!vm->rootFile) return;
-    Push(vm, OBJECT_VALUE(STRING_COPY("ktnRoot")));
-    Push(vm, OBJECT_VALUE(StringCopy(vm, vm->rootFile, (int)strlen(vm->rootFile))));
+    Push(vm, OBJECT_VALUE(STRING_COPY_AUTO("ktnRoot")));
+    Push(vm, OBJECT_VALUE(STRING_COPY(vm, vm->rootFile, (int)strlen(vm->rootFile))));
     TableSet(vm, &vm->globals, AS_STRING(Peek(vm, 1)), Peek(vm, 0));
     PopN(vm, 2);
 }
 
 void registerStdArgs(KTN_VM* vm) {
-    Push(vm, OBJECT_VALUE(STRING_COPY("ktnArgs")));
+    Push(vm, OBJECT_VALUE(STRING_COPY_AUTO("ktnArgs")));
     Push(vm, OBJECT_VALUE(ArrayNew(vm)));
 
     KTN_ObjArray* array = AS_ARRAY(Peek(vm, 0));
 
     for (int i = 0; i < vm->stdArgsCount; i++) {
-        KTN_ArrayAdd(vm, array, OBJECT_VALUE(STRING_COPY(vm->stdArgs[i])));
+        KTN_ArrayAdd(vm, array, OBJECT_VALUE(STRING_COPY_AUTO(vm->stdArgs[i])));
     }
 
     TableSet(vm, &vm->globals, AS_STRING(Peek(vm, 1)), Peek(vm, 0));

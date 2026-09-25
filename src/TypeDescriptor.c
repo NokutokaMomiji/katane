@@ -318,7 +318,7 @@ KTN_ObjTypeDescriptor* KTN_TypeDescriptorParam(KTN_VM* vm, KTN_ObjTypeDescriptor
 }
 
 KTN_ObjTypeDescriptor* KTN_TypeDescriptorNullable(KTN_VM* vm, KTN_ObjTypeDescriptor* inner) {
-    KTN_ObjString* nullName = StringCopy(vm, "Null", 4);
+    KTN_ObjString* nullName = STRING_COPY(vm, "Null", 4);
     KTN_ObjTypeDescriptor* nullDescriptor = KTN_TypeDescriptorNamed(vm, nullName);
     KTN_ObjTypeDescriptor* members[2] = { inner, nullDescriptor };
     return KTN_TypeDescriptorUnion(vm, members, 2);
@@ -373,7 +373,7 @@ void KTN_TypeDescriptorPreResolvePrimitives(KTN_VM *vm) {
         if (!((primitives[i].kata)))
             continue;
 
-        KTN_ObjString* name = StringCopy(vm, primitives[i].name, primitives[i].length);
+        KTN_ObjString* name = STRING_COPY(vm, primitives[i].name, primitives[i].length);
         KTN_ObjTypeDescriptor* descriptor = KTN_TypeDescriptorNamed(vm, name);
         descriptor->resolved = primitives[i].kata;
     }

@@ -52,6 +52,9 @@ typedef enum {
     OBJ_MAP,
     OBJ_ENUM,
     OBJ_ENUM_VARIANT,
+    OBJ_BYTES,
+    OBJ_BUFFER,
+    OBJ_POINTER,
 
     OBJ_FUNCTION,
     OBJ_NATIVE,
@@ -225,6 +228,9 @@ typedef struct KTN_ObjSignature {
     KTN_ObjTypeDescriptor* returnType;
     KTN_SignatureParameter* parameters;
     int parameterCount;
+    uint8_t positionalCount;
+    bool hasVariadic;
+    uint8_t namedStart;
     KTN_ShikiType shikiType;
 } KTN_ObjSignature;
 
@@ -286,8 +292,8 @@ typedef struct {
 
 typedef struct {
     KTN_Object object;
-    KTN_ObjClosure* getter;
-    KTN_ObjClosure* setter;
+    KTN_Value getter;
+    KTN_Value setter;
 } KTN_ObjAccessor;
 
 typedef struct KTN_ObjKata {
@@ -371,8 +377,15 @@ KTN_ObjMap* MapNew(KTN_VM* vm);
 KTN_ObjEnum* EnumNew(KTN_VM* vm);
 KTN_ObjEnumVariant* EnumVariantNew(KTN_VM*);
 
-KTN_ObjString* StringTake(KTN_VM* vm, char* chars, int length);
-KTN_ObjString* StringCopy(KTN_VM* vm, const char* chars, int length);
+/// Takes ownership of the given string and creates a KTN_ObjString. If intern is false, the string will not be interned.
+/// Only constant strings (strings found in the source code at compile time) and VM strings should be interned.
+/// Any runtime-functions that create strings should pass false.
+KTN_ObjString* StringTake(KTN_VM* vm, char* chars, int length, bool intern);
+
+/// Creates a copy of the given string and creates a KTN_ObjString. If intern is false, the copy is not interned.
+/// Only constant strings (strings found in the source code at compile time) and VM strings should be interned.
+/// Any runtime-functions that create strings should pass false.
+KTN_ObjString* StringCopy(KTN_VM* vm, const char* chars, int length, bool intern);
 
 KTN_ObjUpvalue* UpvalueNew(KTN_VM* vm, KTN_Value* slot);
 

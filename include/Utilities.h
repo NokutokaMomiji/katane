@@ -17,6 +17,7 @@
 #define Sign(x) ((((x) < 0) ? -1 : (((x) > 0) ? 1 : 0)))
 #define ArrayCount(array) ((int)(sizeof(array) / sizeof((array)[0])))
 
+
 typedef struct {
     char* buffer;
     int length;
@@ -43,8 +44,24 @@ void SBInit(StringBuilder* sb);
 void SBEnsure(StringBuilder* sb, int extra);
 void SBAppend(StringBuilder* sb, const char* str, int length);
 void SBAppendCStr(StringBuilder* sb, const char* str);
+char* SBDetach(StringBuilder *sb);
 void SBFree(StringBuilder* sb);
 
 char* ProcessEscapes(const char* source, int sourceLength, int* outLength);
+
+#if defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64)
+#include <stdarg.h>
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+int vasprintf(char** ptr, const char* format, va_list ap);
+int asprintf(char** ptr, const char* format, ...);
+
+#ifdef __cplusplus
+}
+#endif
+#endif
 
 #endif

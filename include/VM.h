@@ -177,13 +177,13 @@ static inline void ModuleAdd(KTN_VM* vm, KTN_ObjModule* module, char* name) {
     }
 
     if (!isKnown) 
-        TableSet(vm, &vm->modules, STRING_COPY(module->file), OBJECT_VALUE(module));
+        TableSet(vm, &vm->modules, STRING_COPY_AUTO(module->file), OBJECT_VALUE(module));
 
     KTN_Table* moduleTable = (vm->frameCount == 0) ? &vm->globals : &vm->currentFrame->closure->function->module->values;
 
     moduleTable = &vm->globals;
 
-    TableSet(vm, moduleTable, STRING_COPY(name), OBJECT_VALUE(module));
+    TableSet(vm, moduleTable, STRING_COPY_AUTO(name), OBJECT_VALUE(module));
 }
 
 #endif

@@ -20,7 +20,7 @@
 #define RETURN_INT(value)    return (KTN_NativeResult){true, INT_VALUE(value)}
 #define RETURN_NUMBER(value) return (KTN_NativeResult){true, DOUBLE_VALUE(value)}
 #define RETURN_OBJECT(value) return (KTN_NativeResult){true, OBJECT_VALUE(value)}
-#define RETURN_STRING(value) return (KTN_NativeResult){true, OBJECT_VALUE(StringCopy(vm, value, (int)strlen(value)))}
+#define RETURN_STRING(value) return (KTN_NativeResult){true, STRING_VALUE(value)}
 #define RETURN_VALUE(value)  return (KTN_NativeResult){true, value}
 #define RETURN_ERROR(value)  return (KTN_NativeResult){false, value}
 

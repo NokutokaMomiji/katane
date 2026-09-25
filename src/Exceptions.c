@@ -10,7 +10,7 @@ static KTN_ObjKata* ExceptionGet(KTN_VM* vm, const char* name) {
     }
 
     KTN_Value exceptionClass;
-    if (TableGet(&vm->globals, STRING_COPY(name), &exceptionClass) && IS_CLASS(exceptionClass)) {
+    if (TableGet(&vm->globals, STRING_COPY_AUTO(name), &exceptionClass) && IS_CLASS(exceptionClass)) {
         return AS_CLASS(exceptionClass);
     }
 
@@ -77,7 +77,7 @@ KTN_Value BuildStackTraceObject(KTN_VM* vm, KTN_ObjInstance* stackTraceInstance)
     }
 
     if (stackTraceInstance != NULL) {
-        TableSet(vm, &stackTraceInstance->properties, STRING_COPY("frames"), Peek(vm, 0));
+        TableSet(vm, &stackTraceInstance->properties, STRING_COPY_AUTO("frames"), Peek(vm, 0));
         Pop(vm);
         return OBJECT_VALUE(stackTraceInstance);
     }
@@ -85,7 +85,7 @@ KTN_Value BuildStackTraceObject(KTN_VM* vm, KTN_ObjInstance* stackTraceInstance)
     if (vm->stackTraceClass != NULL) {
         KTN_ObjInstance* traceInstance = InstanceNew(vm, vm->stackTraceClass);
         Push(vm, OBJECT_VALUE(traceInstance));
-        TableSet(vm, &traceInstance->properties, STRING_COPY("frames"), Peek(vm, 1));
+        TableSet(vm, &traceInstance->properties, STRING_COPY_AUTO("frames"), Peek(vm, 1));
         KTN_Value result = Peek(vm, 0);
         PopN(vm, 2);
         return result;
@@ -102,7 +102,7 @@ static KTN_NativeResult ExceptionConstructorNative(KTN_VM* vm, KTN_CallArgs argu
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
 
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1))) {
-        TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("message"), ARG(1));
     }
 
     RETURN_VALUE(ARG(0));
@@ -123,13 +123,13 @@ static KTN_NativeResult TypeErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments)
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
 
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
-        TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("message"), ARG(1));
 
     if (ARGUMENT_COUNT >= 3)
-        TableSet(vm, &self->properties, STRING_COPY("expected"), ARG(2));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("expected"), ARG(2));
 
     if (ARGUMENT_COUNT >= 4)
-        TableSet(vm, &self->properties, STRING_COPY("actual"), ARG(3));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("actual"), ARG(3));
 
     RETURN_VALUE(ARG(0));
 }
@@ -141,9 +141,9 @@ static KTN_NativeResult ValueErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments
 
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
-        TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
-        TableSet(vm, &self->properties, STRING_COPY("value"), ARG(2));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("value"), ARG(2));
     RETURN_VALUE(ARG(0));
 }
 
@@ -154,13 +154,13 @@ static KTN_NativeResult RangeErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments
 
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
-        TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
-        TableSet(vm, &self->properties, STRING_COPY("value"), ARG(2));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("value"), ARG(2));
     if (ARGUMENT_COUNT >= 4)
-        TableSet(vm, &self->properties, STRING_COPY("minimum"), ARG(3));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("minimum"), ARG(3));
     if (ARGUMENT_COUNT >= 5)
-        TableSet(vm, &self->properties, STRING_COPY("maximum"), ARG(4));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("maximum"), ARG(4));
     RETURN_VALUE(ARG(0));
 }
 
@@ -168,11 +168,11 @@ static KTN_NativeResult RangeErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments
 static KTN_NativeResult ArgumentErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
-        TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
-        TableSet(vm, &self->properties, STRING_COPY("argumentName"), ARG(2));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("argumentName"), ARG(2));
     if (ARGUMENT_COUNT >= 4)
-        TableSet(vm, &self->properties, STRING_COPY("value"), ARG(3));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("value"), ARG(3));
     RETURN_VALUE(ARG(0));
 }
 
@@ -180,9 +180,9 @@ static KTN_NativeResult ArgumentErrorConstructor(KTN_VM* vm, KTN_CallArgs argume
 static KTN_NativeResult NumericErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
-        TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
-        TableSet(vm, &self->properties, STRING_COPY("operation"), ARG(2));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("operation"), ARG(2));
     RETURN_VALUE(ARG(0));
 }
 
@@ -190,9 +190,9 @@ static KTN_NativeResult NumericErrorConstructor(KTN_VM* vm, KTN_CallArgs argumen
 static KTN_NativeResult AccessErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
-        TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
-        TableSet(vm, &self->properties, STRING_COPY("target"), ARG(2));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("target"), ARG(2));
     RETURN_VALUE(ARG(0));
 }
 
@@ -200,11 +200,11 @@ static KTN_NativeResult AccessErrorConstructor(KTN_VM* vm, KTN_CallArgs argument
 static KTN_NativeResult PropertyErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
-        TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
-        TableSet(vm, &self->properties, STRING_COPY("propertyName"), ARG(2));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("propertyName"), ARG(2));
     if (ARGUMENT_COUNT >= 4)
-        TableSet(vm, &self->properties, STRING_COPY("target"), ARG(3));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("target"), ARG(3));
     RETURN_VALUE(ARG(0));
 }
 
@@ -212,9 +212,9 @@ static KTN_NativeResult PropertyErrorConstructor(KTN_VM* vm, KTN_CallArgs argume
 static KTN_NativeResult UndefinedErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
-        TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
-        TableSet(vm, &self->properties, STRING_COPY("name"), ARG(2));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("name"), ARG(2));
     RETURN_VALUE(ARG(0));
 }
 
@@ -222,9 +222,9 @@ static KTN_NativeResult UndefinedErrorConstructor(KTN_VM* vm, KTN_CallArgs argum
 static KTN_NativeResult KeyErrorConstructor(KTN_VM* vm, KTN_CallArgs arguments) {
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
     if (ARGUMENT_COUNT >= 2 && IS_STRING(ARG(1)))
-        TableSet(vm, &self->properties, STRING_COPY("message"), ARG(1));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("message"), ARG(1));
     if (ARGUMENT_COUNT >= 3)
-        TableSet(vm, &self->properties, STRING_COPY("key"), ARG(2));
+        TableSet(vm, &self->properties, STRING_COPY_AUTO("key"), ARG(2));
     RETURN_VALUE(ARG(0));
 }
 

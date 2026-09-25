@@ -475,7 +475,7 @@ static void CompilerInit(Compiler* compiler, KTN_ShikiType type, bool isStatic) 
     compiler->tempValueCount = 0;
 
     if (type != TYPE_SCRIPT && type != TYPE_LAMBDA) {
-        current->function->name = StringCopy(parser.vm, parser.previous.start, parser.previous.length);
+        current->function->name = STRING_COPY(parser.vm, parser.previous.start, parser.previous.length);
     }
 
     Local* local = &current->locals[current->localCount++];
@@ -545,7 +545,7 @@ static char* Substring(const char* string, int length) {
 }
 
 static uint32_t IdentifierConstant(KTN_Token* name) {
-    return CompilerMakeConstant(OBJECT_VALUE(StringCopy(parser.vm, name->start, name->length)));
+    return CompilerMakeConstant(OBJECT_VALUE(STRING_COPY(parser.vm, name->start, name->length)));
 }
 
 static bool IdentifiersEqual(KTN_Token* a, KTN_Token* b) {
@@ -577,7 +577,7 @@ static bool ResolveLocalConst(KTN_Token* name, KTN_Value* value) {
 
 static bool ResolveTopLevelConst(KTN_VM* vm, KTN_Token* name,
                                                                   KTN_Value* value) {
-    KTN_ObjString* key = StringCopy(vm, name->start, name->length);
+    KTN_ObjString* key = STRING_COPY(vm, name->start, name->length);
     for (int i = 0; i < current->topLevelConstCount; i++) {
         if (current->topLevelConsts[i].name == key || StringsEqual(current->topLevelConsts[i].name, key)) {
             *value = current->topLevelConsts[i].value;
@@ -623,7 +623,7 @@ static bool EvaluateCompiledExpression(KTN_Value* value) {
             int outputLength = 0;
             char* decoded = ProcessEscapes(start, length, &outputLength);
 
-            *value = OBJECT_VALUE(StringCopy(parser.vm, decoded, outputLength));
+            *value = OBJECT_VALUE(STRING_COPY(parser.vm, decoded, outputLength));
 
             return true;
         }
@@ -1026,7 +1026,7 @@ static void EmitCheckedSet(uint8_t setOp, int argument, KTN_Token* name) {
     }
 
     if (setOp == OP_SET_GLOBAL) {
-        KTN_ObjString* nameStr = StringCopy(parser.vm, name->start, name->length);
+        KTN_ObjString* nameStr = STRING_COPY(parser.vm, name->start, name->length);
         KTN_Value typeDescriptor;
 
         if (TableGet(&parser.vm->compilerState.globalTypes, nameStr, &typeDescriptor) && IS_TYPE_DESCRIPTOR(typeDescriptor)) {
@@ -1202,7 +1202,7 @@ static KTN_ObjTypeDescriptor* TypeAnnotationExpression() {
 
     CompilerAdvance();
 
-    KTN_ObjString* name = StringCopy(vm, parser.previous.start, parser.previous.length);
+    KTN_ObjString* name = STRING_COPY(vm, parser.previous.start, parser.previous.length);
     Push(vm, OBJECT_VALUE(name));
     KTN_ObjTypeDescriptor* base = KTN_TypeDescriptorNamed(vm, name);
     Pop(vm);
@@ -1328,30 +1328,17 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
         return;
     }
 
-    // We'll be using a StringBuilder to create the canonical signature of the
-    // function.
-    StringBuilder sb;
-    SBInit(&sb);
-
-    // Just to handle the name of the function if there is one. Script indicates the top-level code.
-    // Lambda functions are, by definition, anonymous.
-    if (type != TYPE_SCRIPT && type != TYPE_LAMBDA)
-        SBAppend(&sb, parser.previous.start, parser.previous.length);
-    else
-        SBAppendCStr(&sb, "<lambda>");
-
     CompilerInit(compiler, type, isStatic);
     CompilerBeginScope();
 
     // Getters (get property => ...;) do not take parameters, thus we do not allow for parenthesis.
     // Otherwise, parentheses for parameters is expected.
     if (type != TYPE_GETTER) {
-        SBAppendCStr(&sb, "(");
         CompilerConsume(TOKEN_PARENTHESIS_OPEN, "Expected '(' after shiki name");
     }
 
-    bool firstParameter = true;
     bool inNamedBlock = false;
+    bool parsedVariadic = false;
 
     // Consume all parameters. As mentioned beforehand, getters do not take parameters.
     if (!Check(TOKEN_PARENTHESIS_CLOSE) && type != TYPE_GETTER) {
@@ -1360,11 +1347,6 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
             if (current->function->arity > UINT8_MAX) {
                 ErrorAtCurrent("Cannot have more that 255 parameters for a shiki");
             }
-
-            if (!firstParameter)
-                SBAppendCStr(&sb, ", ");
-            else
-                firstParameter = false;
 
             // Check if we have entered named parameters section.
             if (Check(TOKEN_BRACKET_OPEN)) {
@@ -1376,9 +1358,14 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
                     ErrorAtCurrent("Unexpected '{'");
                 }
 
-                SBAppendCStr(&sb, "{");
                 CompilerAdvance();
                 inNamedBlock = true;
+            }
+
+            if (Check(TOKEN_TRI_DOT)) {
+                if (inNamedBlock) {
+                    ErrorAtCurrent("Cannot have named variadic parameters");
+                }
             }
 
             uint32_t Constant = ParseVariable("Expected parameter name");
@@ -1390,8 +1377,6 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
             parameterSpecs[parameterIndex].hasDefaultValue = false;
             parameterSpecs[parameterIndex].isNamed = inNamedBlock;
             parameterSpecs[parameterIndex].defaultValue = EMPTY_VALUE;
-
-            SBAppend(&sb, parser.previous.start, parser.previous.length);
 
             if (Match(TOKEN_COLON)) {
                 int32_t descriptorIndex = ParseTypeAnnotation();
@@ -1405,12 +1390,8 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
                         typeBuffer,
                         sizeof(typeBuffer)
                     );
-                    SBAppendCStr(&sb, ": ");
-                    SBAppendCStr(&sb, typeBuffer);
                     current->locals[current->localCount - 1].typeDescriptorIndex = descriptorIndex;
                     parameterSpecs[parameterIndex].type = AS_TYPE_DESCRIPTOR(CurrentChunk()->constants.values[descriptorIndex]);
-                } else {
-                    SBAppendCStr(&sb, "?");
                 }
             }
 
@@ -1420,7 +1401,6 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
                 }
 
                 parameterSpecs[parameterIndex].hasDefaultValue = true;
-                SBAppendCStr(&sb, " = ?");
                 
                 KTN_Value defaultValue;
 
@@ -1447,17 +1427,14 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
     if (type != TYPE_GETTER && type != TYPE_SETTER) {
         if (inNamedBlock) {
             CompilerConsume(TOKEN_BRACKET_CLOSE, "Expected '}' after positional parameters");
-            SBAppendCStr(&sb, "}");
             inNamedBlock = false;
         }
         CompilerConsume(TOKEN_PARENTHESIS_CLOSE, "Expected ')' after shiki parameters");
-        SBAppendCStr(&sb, ")");
     } else if (type == TYPE_SETTER) {
         if (current->function->arity < 1) {
             ErrorAtCurrent("Setter requires one value parameter");
         }
         CompilerConsume(TOKEN_PARENTHESIS_CLOSE, "Expected ')' after setter value parameter");
-        SBAppendCStr(&sb, ")");
     }
 
     if (Match(TOKEN_COLON)) {
@@ -1469,17 +1446,12 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
                 AS_TYPE_DESCRIPTOR(CurrentChunk()->constants.values[descriptorIndex]),
                 typeBuffer, sizeof(typeBuffer)
             );
-            SBAppendCStr(&sb, ": ");
-            SBAppendCStr(&sb, typeBuffer);
             current->returnDescriptorIndex = descriptorIndex;
             current->function->returnTypeDescriptor = (int)descriptorIndex;
         }
     }
 
-    KTN_ObjString* displaySignature = StringCopy(parser.vm, (sb.buffer != NULL) ? sb.buffer : "", sb.length);
     KTN_ObjTypeDescriptor* returnType = NULL;
-
-    Push(parser.vm, OBJECT_VALUE(displaySignature));
 
     if (current->function->returnTypeDescriptor >= 0) {
         returnType = AS_TYPE_DESCRIPTOR(CurrentChunk()->constants.values[current->function->returnTypeDescriptor]);
@@ -1487,7 +1459,7 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
 
     current->function->signature = SignatureNew(
         parser.vm,
-        displaySignature,
+        NULL,
         current->function->name,
         returnType,
         parameterSpecs,
@@ -1496,7 +1468,6 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
     );
 
     Pop(parser.vm);
-    SBFree(&sb);
 
     // Emit OP_CHECK_PARAMS as the very first instruction if any params were
     // annotated.
@@ -1815,7 +1786,7 @@ static void RegisterTopLevelConst(KTN_Token name, KTN_Value value) {
     // Add global const to list.
     TopLevelConst* entry = &current->topLevelConsts[current->topLevelConstCount++];
 
-    entry->name = StringCopy(parser.vm, name.start, name.length);
+    entry->name = STRING_COPY(parser.vm, name.start, name.length);
     entry->value = value;
 }
 
@@ -2418,7 +2389,7 @@ static void StatementFor() {
 
 static void StatementBreak() {
     BreakableContext* target = currentBreakable;
-    while (target != NULL && target->type != CONTEXT_LOOP)
+    while (target != NULL && target->type != CONTEXT_LOOP && target->type != CONTEXT_SWITCH)
         target = target->enclosing;
 
     if (target == NULL)
@@ -2618,7 +2589,7 @@ static void VariableDeclaration() {
             Local* local = &current->locals[current->localCount - 1];
             local->typeDescriptorIndex = typeDescriptorIndex;
         } else if (typeDescriptorIndex >= 0) {
-            KTN_ObjString* nameString = StringCopy(parser.vm, name.start, name.length);
+            KTN_ObjString* nameString = STRING_COPY(parser.vm, name.start, name.length);
             KTN_Value typeDescriptor = CurrentChunk()->constants.values[typeDescriptorIndex];
 
             TableSet(parser.vm, &parser.vm->compilerState.globalTypes, nameString, typeDescriptor);
@@ -2895,7 +2866,7 @@ static void StatementAssert() {
         CompilerExpression();
     } else {
         // Default message as a string constant.
-        uint32_t msgConst = CompilerMakeConstant(OBJECT_VALUE(StringCopy(parser.vm, "Assertion failed.", 17)));
+        uint32_t msgConst = CompilerMakeConstant(OBJECT_VALUE(STRING_COPY(parser.vm, "Assertion failed.", 17)));
         CompilerEmitByteLong(OP_CONSTANT_LONG, msgConst);
     }
 
@@ -3056,7 +3027,7 @@ static void CompilerString(bool canAssign) {
     int outputLength = 0;
     char* decoded = ProcessEscapes(rawString, rawLength, &outputLength);
 
-    CompilerEmitConstant(OBJECT_VALUE(StringCopy(parser.vm, decoded, outputLength)));
+    CompilerEmitConstant(OBJECT_VALUE(STRING_COPY(parser.vm, decoded, outputLength)));
 }
 
 static void CompilerArray(bool canAssign) {
