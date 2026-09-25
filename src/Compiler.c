@@ -1366,6 +1366,7 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
                 if (inNamedBlock) {
                     ErrorAtCurrent("Cannot have named variadic parameters");
                 }
+                parsedVariadic = true;
             }
 
             uint32_t Constant = ParseVariable("Expected parameter name");
@@ -1466,8 +1467,6 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
         parameterSpecCount,
         type
     );
-
-    Pop(parser.vm);
 
     // Emit OP_CHECK_PARAMS as the very first instruction if any params were
     // annotated.

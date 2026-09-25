@@ -888,11 +888,13 @@ inline void Push(KTN_VM* vm, KTN_Value value) {
 }
 
 inline KTN_Value Pop(KTN_VM* vm) {
+    //printf("Pop called.\n");
     vm->stackTop--;
     return *vm->stackTop;
 }
 
 inline KTN_Value PopN(KTN_VM* vm, int n) {
+    //printf("PopN called with n: %d.\n", n);
     vm->stackTop -= n;
     return *vm->stackTop;
 }
@@ -1897,8 +1899,9 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     }
 
                     default: {
-                        if (!KATANE_RUNTIME_ERROR("Cannot index into this type.",
-                            COLOR_MAGENTA "Ara~" COLOR_RESET " This type doesn't support indexing~ ♡")) return RUNTIME_ERROR(NULL_VALUE);
+                        if (!KATANE_RUNTIME_ERROR("Cannot index into this type.", COLOR_MAGENTA "Ara~" COLOR_RESET " This type doesn't support indexing~ ♡"))
+                            return RUNTIME_ERROR(NULL_VALUE);
+                        value = EMPTY_VALUE;
                     }
                 }
 
