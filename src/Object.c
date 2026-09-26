@@ -85,11 +85,11 @@ static void FunctionStringify(StringBuilder* sb, KTN_ObjShiki* function) {
     SBAppendCStr(sb, buffer);
 }
 
-static void StringRepr(StringBuilder* sb, KTN_ObjString* string) {
+static void StringRepr(StringBuilder* sb, KTN_ObjString* string, bool shorten) {
     SBAppendCStr(sb, "\"");
 
     for (int i = 0; i < string->length;) {
-        if (i >= 20) {
+        if (shorten && i >= 20) {
             SBAppendCStr(sb, "...");
             break;
         }
@@ -187,7 +187,7 @@ static void ArrayStringify(StringBuilder* sb, KTN_ObjArray* array, VisitedSet* v
         KTN_Value value = array->items.values[i];
 
         if (IS_STRING(value))
-            StringRepr(sb, AS_STRING(value));
+            StringRepr(sb, AS_STRING(value), true);
         else
             ValueStringify(sb, value, visited);
 
@@ -218,13 +218,13 @@ static void MapStringify(StringBuilder* sb, KTN_ObjMap* map, VisitedSet* visited
 
     while (KTN_HashMapNextOrdered(hashMap, &cursor, &key, &item)) {
         if (IS_STRING(key))
-            StringRepr(sb, AS_STRING(key));
+            StringRepr(sb, AS_STRING(key), true);
         else
             ValueStringify(sb, key, visited);
 
         SBAppendCStr(sb, ": ");
         if (IS_STRING(item))
-            StringRepr(sb, AS_STRING(item));
+            StringRepr(sb, AS_STRING(item), true);
         else
             ValueStringify(sb, item, visited);
 
@@ -239,118 +239,25 @@ static void MapStringify(StringBuilder* sb, KTN_ObjMap* map, VisitedSet* visited
     VisitedPop(visited);
 }
 
-static void ObjectRepresentation(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
-    switch (OBJECT_TYPE(value)) {
-        case OBJ_STRING:
-            //SBAppend(sb, AS_CSTRING(value), AS_STRING(value)->length);
-            StringRepr(sb, AS_STRING(value));
+static void FormatDouble(char* buffer, size_t size, double value) {
+    for (int precision = 6; precision <= 17; precision++) {
+        snprintf(buffer, size, "%.*g", precision, value);
+        double parsed;
+        if (sscanf(buffer, "%lf", &parsed) == 1 && parsed == value)
             break;
-
-        case OBJ_ARRAY:
-            ArrayStringify(sb, AS_ARRAY(value), visited);
-            break;
-
-        case OBJ_ENUM: {
-            KTN_ObjEnum* _enum = AS_ENUM(value);
-            char buffer[256];
-            snprintf(buffer, sizeof(buffer), "<enum \"%s\">",
-                    (_enum->name != NULL) ? _enum->name->chars : "?");
-            SBAppendCStr(sb, buffer);
-            break;
-        }
-
-        case OBJ_ENUM_VARIANT: {
-            KTN_ObjEnumVariant* variant = AS_ENUM_VARIANT(value);
-            char buffer[256];
-            snprintf(buffer, sizeof(buffer), "<enum variant \"%s\">",
-                    (variant->name != NULL) ? variant->name->chars : "?");
-            SBAppendCStr(sb, buffer);
-            break;
-        }
-
-        case OBJ_MAP:
-            MapStringify(sb, AS_MAP(value), visited);
-            break;
-
-        case OBJ_FUNCTION:
-            FunctionStringify(sb, AS_FUNCTION(value));
-            break;
-
-        case OBJ_CLOSURE:
-            FunctionStringify(sb, AS_CLOSURE(value)->function);
-            break;
-
-        case OBJ_BOUND_METHOD:
-            FunctionStringify(sb, AS_BOUND_METHOD(value)->method->function);
-            break;
-
-        case OBJ_UPVALUE:
-            SBAppendCStr(sb, "Upvalue");
-            break;
-
-        case OBJ_NATIVE: {
-            char buffer[256];
-            snprintf(buffer, sizeof(buffer), "<native function \"%s\">",
-                    AS_NATIVE(value)->name);
-            SBAppendCStr(sb, buffer);
-            break;
-        }
-
-        case OBJ_CLASS: {
-            char buffer[256];
-            snprintf(buffer, sizeof(buffer), "<kata \"%s\">",
-                    AS_CLASS(value)->className->chars);
-            SBAppendCStr(sb, buffer);
-            break;
-        }
-
-        case OBJ_INSTANCE: {
-            char buffer[256];
-            snprintf(buffer, sizeof(buffer), "<%s instance at 0x%p>",
-                    AS_INSTANCE(value)->kata->className->chars,
-                    (void*)AS_INSTANCE(value));
-            SBAppendCStr(sb, buffer);
-            break;
-        }
-
-        case OBJ_MODULE: {
-            char buffer[256];
-            KTN_ObjModule* module = AS_MODULE(value);
-            snprintf(buffer, sizeof(buffer), "<module \"%s\">",
-                    module->name ? module->name : "?");
-            SBAppendCStr(sb, buffer);
-            break;
-        }
-
-        case OBJ_ACCESSOR:
-            SBAppendCStr(sb, "<accessor>");
-            break;
-
-        case OBJ_TYPE_DESCRIPTOR: {
-            char descriptorBuffer[256];
-            KTN_TypeDescriptorFormat(AS_TYPE_DESCRIPTOR(value), descriptorBuffer, 256);
-
-            char buffer[256 + 16];
-            snprintf(buffer, sizeof(buffer), "<type %s>", descriptorBuffer);
-            SBAppendCStr(sb, buffer);
-            break;
-        }
-
-        case OBJ_SIGNATURE: {
-            KTN_ObjSignature* signature = AS_SIGNATURE(value);
-            if (signature->display != NULL)
-                SBAppend(sb, signature->display->chars, signature->display->length);
-            else
-                SBAppendCStr(sb, "<signature>");
-            break;
-        }
     }
 }
 
-static void ObjectStringify(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
+// repr == true:  quoted/escaped strings, "<enum "Name">"-style fallbacks.
+// repr == false: raw string contents, bare enum/variant names.
+// Everything else (functions, classes, instances, ...) formats the same either way.
+static void ObjectFormat(StringBuilder* sb, KTN_Value value, VisitedSet* visited, bool repr) {
     switch (OBJECT_TYPE(value)) {
         case OBJ_STRING:
-            SBAppend(sb, AS_CSTRING(value), AS_STRING(value)->length);
+            if (repr)
+                StringRepr(sb, AS_STRING(value), true);
+            else
+                SBAppend(sb, AS_CSTRING(value), AS_STRING(value)->length);
             break;
 
         case OBJ_ARRAY:
@@ -359,19 +266,31 @@ static void ObjectStringify(StringBuilder* sb, KTN_Value value, VisitedSet* visi
 
         case OBJ_ENUM: {
             KTN_ObjEnum* _enum = AS_ENUM(value);
-            if (_enum->name != NULL)
+            if (repr) {
+                char buffer[256];
+                snprintf(buffer, sizeof(buffer), "<enum \"%s\">",
+                        (_enum->name != NULL) ? _enum->name->chars : "?");
+                SBAppendCStr(sb, buffer);
+            } else if (_enum->name != NULL) {
                 SBAppend(sb, _enum->name->chars, _enum->name->length);
-            else
+            } else {
                 SBAppendCStr(sb, "<enum>");
+            }
             break;
         }
 
         case OBJ_ENUM_VARIANT: {
             KTN_ObjEnumVariant* variant = AS_ENUM_VARIANT(value);
-            if (variant->name != NULL)
+            if (repr) {
+                char buffer[256];
+                snprintf(buffer, sizeof(buffer), "<enum variant \"%s\">",
+                        (variant->name != NULL) ? variant->name->chars : "?");
+                SBAppendCStr(sb, buffer);
+            } else if (variant->name != NULL) {
                 SBAppend(sb, variant->name->chars, variant->name->length);
-            else
+            } else {
                 SBAppendCStr(sb, "<enum-variant>");
+            }
             break;
         }
 
@@ -454,13 +373,13 @@ static void ObjectStringify(StringBuilder* sb, KTN_Value value, VisitedSet* visi
     }
 }
 
-static void ValueRepr(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
+static void ValueFormat(StringBuilder* sb, KTN_Value value, VisitedSet* visited, bool repr) {
 #ifdef NAN_BOXING
     if (IS_EMPTY(value)) {
         SBAppendCStr(sb, "<empty>");
         return;
     }
-    
+
     if (IS_BOOL(value)) {
         SBAppendCStr(sb, AS_BOOL(value) ? "true" : "false");
         return;
@@ -480,21 +399,13 @@ static void ValueRepr(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
 
     if (IS_DOUBLE(value)) {
         char buffer[32];
-        double numberValue = AS_DOUBLE(value);
-
-        for (int precision = 6; precision <= 17; precision++) {
-        snprintf(buffer, sizeof(buffer), "%.*g", precision, numberValue);
-        double parsed;
-        if (sscanf(buffer, "%lf", &parsed) == 1 && parsed == numberValue)
-            break;
-        }
-
+        FormatDouble(buffer, sizeof(buffer), AS_DOUBLE(value));
         SBAppendCStr(sb, buffer);
         return;
     }
 
     if (IS_OBJECT(value)) {
-        ObjectRepresentation(sb, value, visited);
+        ObjectFormat(sb, value, visited, repr);
     }
 #else
     switch (value.type) {
@@ -515,21 +426,13 @@ static void ValueRepr(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
 
         case VALUE_NUMBER: {
             char buffer[32];
-            double numberValue = AS_DOUBLE(value);
-
-            for (int precision = 6; precision <= 17; precision++) {
-            snprintf(buffer, sizeof(buffer), "%.*g", precision, numberValue);
-            double parsed;
-            if (sscanf(buffer, "%lf", &parsed) == 1 && parsed == numberValue)
-                break;
-            }
-
+            FormatDouble(buffer, sizeof(buffer), AS_DOUBLE(value));
             SBAppendCStr(sb, buffer);
             break;
         }
 
         case VALUE_OBJECT:
-            ObjectRepr(sb, value, visited);
+            ObjectFormat(sb, value, visited, repr);
             break;
 
         default:
@@ -538,88 +441,12 @@ static void ValueRepr(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
 #endif
 }
 
+static void ValueRepr(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
+    ValueFormat(sb, value, visited, true);
+}
+
 static void ValueStringify(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
-#ifdef NAN_BOXING
-    if (IS_EMPTY(value)) {
-        SBAppendCStr(sb, "<empty>");
-        return;
-    }
-
-    if (IS_BOOL(value)) {
-        SBAppendCStr(sb, AS_BOOL(value) ? "true" : "false");
-        return;
-    }
-
-    if (IS_NULL(value)) {
-        SBAppendCStr(sb, "null");
-        return;
-    }
-
-    if (IS_INT(value)) {
-        char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%d", AS_INT(value));
-        SBAppendCStr(sb, buffer);
-        return;
-    }
-
-    if (IS_DOUBLE(value)) {
-        char buffer[32];
-        double numberValue = AS_DOUBLE(value);
-
-        for (int precision = 6; precision <= 17; precision++) {
-        snprintf(buffer, sizeof(buffer), "%.*g", precision, numberValue);
-        double parsed;
-        if (sscanf(buffer, "%lf", &parsed) == 1 && parsed == numberValue)
-            break;
-        }
-
-        SBAppendCStr(sb, buffer);
-        return;
-    }
-
-    if (IS_OBJECT(value)) {
-        ObjectStringify(sb, value, visited);
-    }
-#else
-    switch (value.type) {
-    case VALUE_BOOL:
-        SBAppendCStr(sb, AS_BOOL(value) ? "true" : "false");
-        break;
-
-    case VALUE_NULL:
-        SBAppendCStr(sb, "null");
-        break;
-
-    case VALUE_INT: {
-        char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%d", AS_INT(value));
-        SBAppendCStr(sb, buffer);
-        break;
-    }
-
-    case VALUE_NUMBER: {
-        char buffer[32];
-        double numberValue = AS_DOUBLE(value);
-
-        for (int precision = 6; precision <= 17; precision++) {
-        snprintf(buffer, sizeof(buffer), "%.*g", precision, numberValue);
-        double parsed;
-        if (sscanf(buffer, "%lf", &parsed) == 1 && parsed == numberValue)
-            break;
-        }
-
-        SBAppendCStr(sb, buffer);
-        break;
-    }
-
-    case VALUE_OBJECT:
-        ObjectStringify(sb, value, visited);
-        break;
-
-    default:
-        break;
-    }
-#endif
+    ValueFormat(sb, value, visited, false);
 }
 
 #define ALLOCATE_OBJ(type, objectType) (type*)ObjectAllocate(vm, sizeof(type), objectType)
@@ -765,9 +592,10 @@ KTN_ObjTypeDescriptor* TypeDescriptorNew(KTN_VM* vm) {
 static KTN_ObjString* StringAllocate(KTN_VM* vm, char* chars, int length, uint32_t hash, bool intern) {
     KTN_ObjString* string = ALLOCATE_OBJ(KTN_ObjString, OBJ_STRING);
     string->length = length;
-    string->charLength = Utf8StrnCpLen(chars, length); // codepoint count
+    string->charLength = Utf8StrnCpLen(chars, length, &string->isAscii); // codepoint count
     string->chars = chars;
     string->hash = hash;
+    string->index = NULL;
 
     if (intern) {
         Push(vm, OBJECT_VALUE(string));
@@ -980,12 +808,12 @@ void ObjectPrint(KTN_Value value) {
 }
 
 
-void ObjectRepr(KTN_Value value) {
+void ObjectRepr(KTN_Value value, bool shortenStrings) {
     StringBuilder sb;
     SBInit(&sb);
     VisitedSet visited;
     visited.count = 0;
-    ValueRepr(&sb, value, &visited);
+    ValueFormat(&sb, value, &visited, shortenStrings);
     if (sb.buffer)
         printf("%s", sb.buffer);
     SBFree(&sb);

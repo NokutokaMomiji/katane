@@ -1,6 +1,7 @@
 #include "HashMap.h"
 #include "TypeDescriptor.h"
 #include "Value.h"
+#include <ctype.h>
 #define _GNU_SOURCE
 #include <stdarg.h>
 #include <stdio.h>
@@ -630,14 +631,14 @@ static DECLARE_NATIVE(Help) {
             printf("   " COLOR_MAGENTA "A built-in primitive type~ Soft and simple.\n" COLOR_RESET);
 
         printf("   Value: ");
-        ObjectRepr(value);
+        ObjectRepr(value, true);
         printf("\n");
 
         RETURN_NULL;
     }
 
     printf(COLOR_CYAN "mochi " COLOR_RESET);
-    ObjectRepr(value);
+    ObjectRepr(value, true);
     printf("\n");
 
     if (IS_ARRAY(value)) {
@@ -743,7 +744,7 @@ static void PrintCallFrame(KTN_VM* vm, const KTN_CallFrame* frame) {
         printf("Locals / Args:");
         for (int i = 0; i < function->arity; i++) {
             printf(" ");
-            ObjectRepr(frame->slots[i]);
+            ObjectRepr(frame->slots[i], true);
         }
         printf("\n");
     }
@@ -1464,7 +1465,7 @@ static KTN_MAYBE_UNUSED void dumpVMState(KTN_VM* vm, const char* reason) {
     fprintf(stderr, "Stack contents (bottom to top):\n");
     for (KTN_Value* slot = vm->stack; slot < vm->stackTop; slot++) {
         fprintf(stderr, "  [%lld] ", slot - vm->stack);
-        ObjectRepr(*slot);
+        ObjectRepr(*slot, true);
         fprintf(stderr, "\n");
     }
 
@@ -1482,7 +1483,7 @@ static KTN_MAYBE_UNUSED void dumpVMState(KTN_VM* vm, const char* reason) {
     // If there's an active exception (e.g., in catch handler), print it
     if (vm->caughtException && vm->errorCount != 0) {
         fprintf(stderr, "Pending exception: ");
-        ObjectRepr(OBJECT_VALUE(vm->errors[-1]->value));
+        ObjectRepr(OBJECT_VALUE(vm->errors[-1]->value), true);
         fprintf(stderr, "\n");
     }
 
@@ -1497,7 +1498,7 @@ static void dumpPanicState(KTN_VM* vm) {
     fprintf(stderr, "Stack contents (bottom to top):\n");
     for (KTN_Value* slot = vm->stack; slot < vm->stackTop; slot++) {
         fprintf(stderr, "  [%lld] ", slot - vm->stack);
-        ObjectRepr(*slot);
+        ObjectRepr(*slot, true);
         fprintf(stderr, "\n");
     }
 
@@ -1639,7 +1640,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
         printf("( ");
         for (KTN_Value* slot = vm->stack; slot < vm->stackTop; slot++) {
             printf("[");
-            ObjectRepr(*slot);
+            ObjectRepr(*slot, true);
             printf(" ]");
         }
         printf(" )");
@@ -1872,29 +1873,52 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     case OBJ_STRING: {
                         // Index into a string by Unicode codepoint, not by byte.
                         KTN_ObjString* str = AS_STRING(Peek(vm, 1));
-                        KTN_Value idxVal   = Peek(vm, 0);
+                        KTN_Value indexValue = Peek(vm, 0);
 
-                        if (!IS_NUMERIC(idxVal)) {
+                        if (!IS_INT(indexValue)) {
                             if (!KATANE_RUNTIME_ERROR("String index must be an integer.",
                                 COLOR_MAGENTA "Nyaa~" COLOR_RESET " String indices must be integers, not whatever that was~ ♡")) return RUNTIME_ERROR(NULL_VALUE);
                         }
 
-                        int cpIdx = (int)AS_NUMERIC(idxVal);
-                        // Support negative indices (Python-style)
-                        if (cpIdx < 0) cpIdx += str->charLength;
+                        int codepointIndex = AS_NUMERIC(indexValue);
+                        
+                        // If the codepoint index is negative, move it towards the relative positive place.
+                        // This is Python's [-1] behavior.
+                        if (codepointIndex < 0)
+                            codepointIndex += str->charLength;
 
-                        if (cpIdx < 0 || cpIdx >= str->charLength) {
+                        // Check if the codepoint index is out of range.
+                        if (codepointIndex < 0 || codepointIndex >= str->charLength) {
                             if (!KATANE_RUNTIME_ERROR("String index %d out of range (length %d).",
                                 COLOR_MAGENTA "Eep~" COLOR_RESET " Index " COLOR_CYAN "%d" COLOR_RESET " is out of my string's reach~! It only goes up to " COLOR_CYAN "%d" COLOR_RESET " ♡",
-                                cpIdx, str->charLength, cpIdx, str->charLength - 1)) return RUNTIME_ERROR(NULL_VALUE);
+                                codepointIndex, str->charLength, codepointIndex, str->charLength - 1)) return RUNTIME_ERROR(NULL_VALUE);
                         }
 
-                        Utf8Char cp = Utf8CodepointAt(str->chars, str->length, cpIdx);
-                        // Encode the single codepoint into a temporary buffer
-                        char buf[5];
-                        int  encLen = Utf8Encode(cp.codepoint, buf);
-                        buf[encLen] = '\0';
-                        value = OBJECT_VALUE(STRING_COPY(vm, buf, encLen));
+                        uint32_t codepoint;
+                        int encodingLength;
+                        char buffer[5];
+
+                        // If the string's characters are ASCII, we don't need to do any actual UTF-8 decoding.
+                        if (str->isAscii) {
+                            codepoint = (uint8_t)str->chars[codepointIndex];
+                            buffer[0] = str->chars[codepointIndex];
+                            encodingLength = 1;
+                        } else {
+                            // We build the index.
+                            if (str->index == NULL) {
+                                str->index = ALLOCATE(Utf8Index, 1);
+                                Utf8IndexBuild(str->index, str->chars, str->length);
+                            }
+
+                            Utf8Char codepointChar = Utf8IndexCharAt(str->index, str->chars, codepointIndex);
+                            codepoint = codepointChar.codepoint;
+                            encodingLength = Utf8Encode(codepoint, buffer);
+                        }
+
+                        buffer[encodingLength] = '\0';
+                        value = (str->isAscii && codepoint < 128)
+                              ? OBJECT_VALUE(STRING_COPY(vm, buffer, 1))
+                              : OBJECT_VALUE(STRING_COPY(vm, buffer, encodingLength));
                         break;
                     }
 

@@ -2,6 +2,7 @@
 #define KATANE_OBJECT_H
 
 #include "Common.h"
+#include "Utf8.h"
 #include "Value.h"
 #include "Chunk.h"
 #include "Table.h"
@@ -238,8 +239,10 @@ struct KTN_ObjString {
     KTN_Object object;
     int length;
     int charLength;
-    char* chars;
     uint32_t hash;
+    char* chars;
+    bool isAscii;
+    Utf8Index* index;
 };
 
 typedef struct {
@@ -401,7 +404,7 @@ void KTN_WellKnownNamesMark(KTN_VM* vm, KTN_WellKnownNames* names);
 KTN_ObjString* KTN_GetWellKnownName(KTN_VM* vm, KTN_WellKnownName id);
 
 void ObjectPrint(KTN_Value value);
-void ObjectRepr(KTN_Value value);
+void ObjectRepr(KTN_Value value, bool shortenStrings);
 KTN_ObjString* ObjectToString(KTN_VM* vm, KTN_Value value);
 
 static inline bool IsObjectType(KTN_Value value, KTN_ObjectType type) {

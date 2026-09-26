@@ -147,7 +147,7 @@ static void Repl(KTN_VM* vm) {
             KTN_InterpretResult result = KTN_Interpret(vm, module, source);
 
             if (result.status == INTERPRET_OK && !IS_NULL(result.value)) {
-                ObjectRepr(result.value);
+                ObjectRepr(result.value, false);
                 printf("\n");
             }
 
@@ -253,7 +253,7 @@ static void RunEval(KTN_VM* vm, const char* source) {
     if (result.status == INTERPRET_RUNTIME_ERROR) exit(70);
 
     if (result.status == INTERPRET_OK && !IS_NULL(result.value) && !vm->shouldExitAfterBytecode) {
-        ObjectRepr(result.value);
+        ObjectRepr(result.value, false);
         printf("\n");
     }
 }

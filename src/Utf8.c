@@ -115,7 +115,8 @@ Utf8Char DecodeUtf8(const char* str, int byteLength, int index) {
 
     if (firstByte < 0xC0)
         return (Utf8Char){ UTF8_REPLACEMENT_CHAR, 1 };
-
+// Helper macro. It checks if the char at the given index is within bounds and also a valid UTF-8 character.
+// If it is, the char is stored inside the given variable. Otherwise, the function ends by returning a UTF-8 replacement char.
 #define CONT_BYTE(offset, var)                                                       \
     if (index + (offset) >= byteLength) return (Utf8Char){ UTF8_REPLACEMENT_CHAR, 1 }; \
     uint8_t var = (uint8_t)str[index + (offset)];                                   \
@@ -196,18 +197,32 @@ int Utf8Strlen(const char* str) {
 
 /// Returns the number of UTF-8 codepoints in a string of known byte-length.
 /// This works identically to Utf8StrLen, just that you also pass a byte length.
-int Utf8StrnCpLen(const char* str, int byteLength) {
+int Utf8StrnCpLen(const char* str, int byteLength, bool* outIsAscii) {
     if (!str || byteLength <= 0) return 0;
 
     int count = 0;
     int i = 0;
+    bool ascii = true;
     
     while (i < byteLength) {
+        uint8_t byte = (uint8_t)str[i];
+
+        if (byte < 0x80) {
+            i++;
+            count++;
+            continue;
+        }
+
+        ascii = false;
+
         Utf8Char chr = DecodeUtf8(str, byteLength, i);
    
         i += (chr.length > 0) ? chr.length : 1;
         count++;
     }
+
+    if (outIsAscii != NULL)
+        *outIsAscii = ascii;
    
     return count;
 }
@@ -383,17 +398,17 @@ static int32_t CaseDelta(const CaseEntry* table, int count, uint32_t codepoint) 
     return 0;
 }
  
-bool Utf8IndexBuild(Utf8Index* idx, const char* str, int byteLength) {
-    idx->offsets = NULL;
-    idx->codepointCount = 0;
-    idx->byteLength = byteLength;
+bool Utf8IndexBuild(Utf8Index* index, const char* str, int byteLength) {
+    index->offsets = NULL;
+    index->codepointCount = 0;
+    index->byteLength = byteLength;
 
     if (!str || byteLength <= 0) {
-        idx->offsets = (uint32_t*)malloc(sizeof(uint32_t));
+        index->offsets = (uint32_t*)malloc(sizeof(uint32_t));
 
-        if (!idx->offsets) return false;
+        if (!index->offsets) return false;
 
-        idx->offsets[0] = 0;
+        index->offsets[0] = 0;
         return true;
     }
 
@@ -407,7 +422,9 @@ bool Utf8IndexBuild(Utf8Index* idx, const char* str, int byteLength) {
 
     while (i < byteLength) {
         offsets[count++] = (uint32_t)i;
+
         Utf8Char ch = UTF8_DECODE_FAST(str, byteLength, i);
+        
         i += (ch.length > 0) ? ch.length : 1;
     }
 
@@ -415,8 +432,8 @@ bool Utf8IndexBuild(Utf8Index* idx, const char* str, int byteLength) {
     
     uint32_t* trimmed = (uint32_t*)realloc(offsets, sizeof(uint32_t) * ((size_t)count + 1));
     
-    idx->offsets = (trimmed) ? trimmed : offsets;
-    idx->codepointCount = count;
+    index->offsets = (trimmed) ? trimmed : offsets;
+    index->codepointCount = count;
     
     return true;
 }
@@ -429,26 +446,26 @@ void Utf8IndexFree(Utf8Index* idx) {
     idx->byteLength = 0;
 }
  
-Utf8Char Utf8IndexCharAt(const Utf8Index* idx, const char* str, int cpIndex) {
-    if (!idx || cpIndex < 0 || cpIndex >= idx->codepointCount)
+Utf8Char Utf8IndexCharAt(const Utf8Index* index, const char* str, int codepointIndex) {
+    if (!index || codepointIndex < 0 || codepointIndex >= index->codepointCount)
         return (Utf8Char){ UTF8_REPLACEMENT_CHAR, 0 };
 
-    return UTF8_DECODE_FAST(str, idx->byteLength, (int)idx->offsets[cpIndex]);
+    return UTF8_DECODE_FAST(str, index->byteLength, (int)index->offsets[codepointIndex]);
 }
  
-int Utf8IndexByteOffset(const Utf8Index* idx, int cpIndex) {
-    if (!idx || cpIndex < 0 || cpIndex > idx->codepointCount)
+int Utf8IndexByteOffset(const Utf8Index* index, int codepointIndex) {
+    if (!index || codepointIndex < 0 || codepointIndex > index->codepointCount)
         return -1;
     
-    return (int)idx->offsets[cpIndex];
+    return (int)index->offsets[codepointIndex];
 }
  
-char* Utf8IndexSubstring(const Utf8Index* idx, const char* str, int cpStart, int cpEnd) {
-    if (!idx || !str || cpStart < 0 || cpEnd < cpStart || cpEnd > idx->codepointCount)
+char* Utf8IndexSubstring(const Utf8Index* index, const char* str, int codepointStart, int codepointEnd) {
+    if (!index || !str || codepointStart < 0 || codepointEnd < codepointStart || codepointEnd > index->codepointCount)
         return NULL;
     
-    int startByte = (int)idx->offsets[cpStart];
-    int endByte = (int)idx->offsets[cpEnd];
+    int startByte = (int)index->offsets[codepointStart];
+    int endByte = (int)index->offsets[codepointEnd];
     int len = endByte - startByte;
     char* out = (char*)malloc((size_t)len + 1);
     
@@ -460,18 +477,18 @@ char* Utf8IndexSubstring(const Utf8Index* idx, const char* str, int cpStart, int
     return out;
 }
  
-uint32_t Utf8SimpleLower(uint32_t cp) {
-    int32_t d = CaseDelta(UPPER_TO_LOWER, UPPER_TO_LOWER_COUNT, cp);
-    return (d) ? (uint32_t)((int32_t)cp + d) : cp;
+uint32_t Utf8SimpleLower(uint32_t codepoint) {
+    int32_t d = CaseDelta(UPPER_TO_LOWER, UPPER_TO_LOWER_COUNT, codepoint);
+    return (d) ? (uint32_t)((int32_t)codepoint + d) : codepoint;
 }
  
-uint32_t Utf8SimpleUpper(uint32_t cp) {
-    int32_t d = CaseDelta(LOWER_TO_UPPER, LOWER_TO_UPPER_COUNT, cp);
-    return (d) ? (uint32_t)((int32_t)cp + d) : cp;
+uint32_t Utf8SimpleUpper(uint32_t codepoint) {
+    int32_t d = CaseDelta(LOWER_TO_UPPER, LOWER_TO_UPPER_COUNT, codepoint);
+    return (d) ? (uint32_t)((int32_t)codepoint + d) : codepoint;
 }
  
-bool Utf8IsUpper(uint32_t cp) { return CaseDelta(UPPER_TO_LOWER, UPPER_TO_LOWER_COUNT, cp) != 0; }
-bool Utf8IsLower(uint32_t cp) { return CaseDelta(LOWER_TO_UPPER, LOWER_TO_UPPER_COUNT, cp) != 0; }
+bool Utf8IsUpper(uint32_t codepoint) { return CaseDelta(UPPER_TO_LOWER, UPPER_TO_LOWER_COUNT, codepoint) != 0; }
+bool Utf8IsLower(uint32_t codepoint) { return CaseDelta(LOWER_TO_UPPER, LOWER_TO_UPPER_COUNT, codepoint) != 0; }
  
 static char* ApplyCaseMap(const char* str, int byteLength, uint32_t (*mapFn)(uint32_t)) {
     if (!str || byteLength <= 0) {
@@ -516,8 +533,8 @@ char* Utf8ToTitle(const char* str, int byteLength) {
     return sb.buffer;
 }
  
-bool Utf8IsWhitespace(uint32_t cp) {
-    switch (cp) {
+bool Utf8IsWhitespace(uint32_t codepoint) {
+    switch (codepoint) {
         case 0x0009: case 0x000A: case 0x000B: case 0x000C: case 0x000D:
         case 0x0020: case 0x0085: case 0x00A0: case 0x1680:
         case 0x2000: case 0x2001: case 0x2002: case 0x2003: case 0x2004:

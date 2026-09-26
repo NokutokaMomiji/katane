@@ -24,7 +24,7 @@ typedef struct {
 bool IsValidCodePoint(uint32_t codepoint);
 Utf8Char DecodeUtf8(const char* string, int byteLength, int index);
 int Utf8Strlen(const char* string);
-int Utf8StrnCpLen(const char* string, int byteLength);
+int Utf8StrnCpLen(const char* str, int byteLength, bool* outIsAscii);
 Utf8Char Utf8CodepointAt(const char* string, int byteLength, int codepointIndex);
 int Utf8ByteOffsetAt(const char* string, int byteLength, int codepointIndex);
 int Utf8Encode(uint32_t codepoint, char* output);
