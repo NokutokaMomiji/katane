@@ -50,7 +50,7 @@ static int JumpInstruction(const char* name, int sign, KTN_Chunk* chunk, int off
 static int ConstantInstruction(const char* name, KTN_Chunk* chunk, int offset) {
     uint8_t Constant = chunk->code[offset + 1]; //Grab constant index from chunk.
     printf("%-16s %4d '", name, Constant);
-    ObjectRepr(chunk->constants.values[Constant]);
+    ObjectRepr(chunk->constants.values[Constant], true);
     printf("'\n");
     return offset + 2; //We skip over the Constant Operation Code + the Constant Index.
 }
@@ -62,7 +62,7 @@ static int ConstantLongInstruction(const char* name, KTN_Chunk* chunk, int offse
                            | (uint32_t)(chunk->code[offset + 4]);
 
     printf("%-16s %4" PRIu32 " '", name, constantIndex);
-    ObjectRepr(chunk->constants.values[constantIndex]);
+    ObjectRepr(chunk->constants.values[constantIndex], true);
     printf("'\n");
     return offset + 5;  // We skip over the Constant Operation Code + the 4 bytes that make up the long index.
 }
@@ -79,7 +79,7 @@ static int ConstantLongPairInstruction(const char* name, KTN_Chunk* chunk, int o
                     | (uint32_t)(chunk->code[offset + 8]);
 
     printf("%-16s %4u '", name, first);
-    ObjectRepr(chunk->constants.values[first]);
+    ObjectRepr(chunk->constants.values[first], true);
     printf("' desc=%u\n", second);
 
     return offset + 9;
@@ -93,7 +93,7 @@ static int ConstantLongByteInstruction(const char* name, KTN_Chunk* chunk, int o
     uint8_t byte = chunk->code[offset + 5];
 
     printf("%-16s %4" PRIu32 " '", name, constantIndex);
-    ObjectRepr(chunk->constants.values[constantIndex]);
+    ObjectRepr(chunk->constants.values[constantIndex], true);
     printf("' %d\n", byte);
     return offset + 6;  // We skip over the Constant Operation Code + the 4 bytes that make up the long index.
 }
@@ -107,7 +107,7 @@ static int InitPropertyInstruction(const char* name, KTN_Chunk* chunk, int offse
     uint8_t flags = chunk->code[offset + 6];
 
     printf("%-16s %4" PRIu32 " '", name, constantIndex);
-    ObjectRepr(chunk->constants.values[constantIndex]);
+    ObjectRepr(chunk->constants.values[constantIndex], true);
     printf("' static=%u flags=%u\n", isStatic, flags);
     return offset + 7;
 }
@@ -125,7 +125,7 @@ static int InitTypedPropertyInstruction(const char* name, KTN_Chunk* chunk, int 
     uint8_t flags = chunk->code[offset + 10];
 
     printf("%-16s %4" PRIu32 " '", name, nameIndex);
-    ObjectRepr(chunk->constants.values[nameIndex]);
+    ObjectRepr(chunk->constants.values[nameIndex], true);
     printf("' static=%u desc=%" PRIu32 " flags=%u\n", isStatic, descriptorIndex, flags);
     return offset + 11;
 }
@@ -154,7 +154,7 @@ static KTN_MAYBE_UNUSED int InvokeInstruction(const char* name, KTN_Chunk* chunk
     uint8_t argumentCount = chunk->code[offset + 2];
 
     printf("%-16s (%d args) %4d '", name, argumentCount, constant);
-    ObjectRepr(chunk->constants.values[constant]);
+    ObjectRepr(chunk->constants.values[constant], true);
     printf("'\n");
 
     return offset + 3;
@@ -169,7 +169,7 @@ static int InvokeInstructionLong(const char* name, KTN_Chunk* chunk, int offset)
     uint8_t argumentCount = chunk->code[offset + 5];
 
     printf("%-16s (%d args) %4d '", name, argumentCount, constant);
-    ObjectRepr(chunk->constants.values[constant]);
+    ObjectRepr(chunk->constants.values[constant], true);
     printf("'\n");
 
     return offset + 6;
@@ -344,7 +344,7 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
             Constant += chunk->code[offset++];
 
             printf("%-16s %4d ", "OP_CLOSURE", Constant);
-            ObjectRepr(chunk->constants.values[Constant]);
+            ObjectRepr(chunk->constants.values[Constant], true);
             printf("\n");
 
             KTN_ObjShiki* function = AS_FUNCTION(chunk->constants.values[Constant]);

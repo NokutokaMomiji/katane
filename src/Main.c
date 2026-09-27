@@ -132,7 +132,7 @@ static void Repl(KTN_VM* vm) {
 
         if (length + lineLen + 1 > capacity) {
             size_t oldCap = capacity;
-            capacity = (oldCap == 0 ? 1024 : oldCap * 2);
+            capacity = ((oldCap == 0) ? 1024 : oldCap * 2);
             source = (char*)realloc(source, capacity + 1);
             if (!source) {
                 fprintf(stderr, "[ERROR]: Out of memory in REPL.\n");

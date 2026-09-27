@@ -724,6 +724,7 @@ static DECLARE_NATIVE(RemoveFile) {
     RETURN_VALUE(INT_VALUE(result));
 }
 
+#ifdef DEBUG_PRINT_CODE
 static void PrintCallFrame(KTN_VM* vm, const KTN_CallFrame* frame) {
     KTN_ObjShiki* function = frame->closure->function;
     size_t ipOffset = (size_t)(frame->ip - function->chunk.code);
@@ -750,6 +751,7 @@ static void PrintCallFrame(KTN_VM* vm, const KTN_CallFrame* frame) {
     }
     printf("===========================\n");
 }
+#endif
 
 static bool CanAccessMember(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name, KTN_Value* isHidden) {
     if (!TableGet(&kata->privateMembers, name, isHidden)) {

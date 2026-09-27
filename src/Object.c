@@ -441,10 +441,6 @@ static void ValueFormat(StringBuilder* sb, KTN_Value value, VisitedSet* visited,
 #endif
 }
 
-static void ValueRepr(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
-    ValueFormat(sb, value, visited, true);
-}
-
 static void ValueStringify(StringBuilder* sb, KTN_Value value, VisitedSet* visited) {
     ValueFormat(sb, value, visited, false);
 }
@@ -791,6 +787,12 @@ KTN_ObjString* ObjectToString(KTN_VM* vm, KTN_Value value) {
     return result;
 }
 
+void ObjectAppendToSB(StringBuilder* sb, KTN_Value value) {
+    VisitedSet visited;
+    visited.count = 0;
+    ValueStringify(sb, value, &visited);
+}
+
 /// Prints a value to stdout. Cycle-safe for arrays and maps.
 void ObjectPrint(KTN_Value value) {
     StringBuilder sb;
@@ -806,7 +808,6 @@ void ObjectPrint(KTN_Value value) {
     
     SBFree(&sb);
 }
-
 
 void ObjectRepr(KTN_Value value, bool shortenStrings) {
     StringBuilder sb;

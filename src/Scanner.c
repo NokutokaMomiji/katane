@@ -8,6 +8,17 @@
 #include "Memory.h"
 
 #define SCANNER_STATE_STACK_MAX 64
+#define SCANNER_INTERPOLATION_MAX 8
+
+typedef enum {
+    SCANNER_STRING,
+    SCANNER_INTERPOLATION
+} ScannerMode;
+
+typedef struct {
+    ScannerMode mode;
+    int depth;
+} ScannerStack;
 
 typedef struct {
     const char* start;
@@ -15,6 +26,9 @@ typedef struct {
     int line;
     int previousLine;
     char* source;
+
+    ScannerStack stack;
+    int stackTop;
 } Scanner;
 
 Scanner scanner;
@@ -138,15 +152,15 @@ static char ScannerPeekPrevious() {
 /// For ASCII bytes this is identical to ScannerAdvance(). For multi-byte
 /// sequences it advances all continuation bytes in one call.
 static void ScannerAdvanceCodepoint() {
-    uint8_t b = (uint8_t)*scanner.current;
+    uint8_t byte = (uint8_t)*scanner.current;
 
-    int seqLen = 1;
+    int sequenceLength = 1;
     
-    if ((b & 0xE0) == 0xC0) seqLen = 2;
-    else if ((b & 0xF0) == 0xE0) seqLen = 3;
-    else if ((b & 0xF8) == 0xF0) seqLen = 4;
+    if ((byte & 0xE0) == 0xC0) sequenceLength = 2;
+    else if ((byte & 0xF0) == 0xE0) sequenceLength = 3;
+    else if ((byte & 0xF8) == 0xF0) sequenceLength = 4;
 
-    for (int i = 0; i < seqLen && !ScannerAtEnd(); i++)
+    for (int i = 0; i < sequenceLength && !ScannerAtEnd(); i++)
         scanner.current++;
 }
 

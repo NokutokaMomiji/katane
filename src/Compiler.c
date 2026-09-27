@@ -498,11 +498,11 @@ static KTN_ObjShiki* CompilerEnd() {
 
     KTN_ObjShiki* function = current->function;
 
+#ifdef DEBUG_PRINT_CODE
+    DisassembleChunk(CurrentChunk(), function->name != NULL ? function->name->chars : "<script>");
+#else
     if (!parser.hadError && parser.vm->shouldPrintBytecode)
         DisassembleChunk(CurrentChunk(), (function->name != NULL) ? function->name->chars : "<script>");
-
-#ifdef DEBUG_PRINT_CODE
-        DisassembleChunk(CurrentChunk(), function->name != NULL ? function->name->chars : "<script>");
 #endif
 
     current = current->enclosing;
