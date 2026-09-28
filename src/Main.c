@@ -52,11 +52,16 @@ static KTN_ObjModule* generateModule(KTN_VM* vm, const char* name, const char* r
     char* duplicateRootFile = strdup(rootFile);
     
     KTN_ObjModule* module = ModuleNew(vm, duplicateName, duplicateRootFile, NULL);
+
     module->isMain = true;
+
     ModuleAdd(vm, module, NULL);
+
     vm->rootFile = duplicateRootFile;
+
     registerModuleFile(vm, module);
     registerRoot(vm);
+
     return module;
 }
 
@@ -107,10 +112,10 @@ static void Repl(KTN_VM* vm) {
 
     printHeader();
 
-    KTN_ObjModule* module = generateModule(vm, "", "<repl>");
+    KTN_ObjModule* module = generateModule(vm, "<script>", "<repl>");
 
     while (1) {
-        printf(firstLine ? COLOR_MAGENTA ">>> " COLOR_RESET : COLOR_GRAY "... " COLOR_RESET);
+        printf((firstLine) ? COLOR_MAGENTA ">>> " COLOR_RESET : COLOR_GRAY "... " COLOR_RESET);
 
         char line[1024];
         if (!fgets(line, sizeof(line), stdin)) {
@@ -123,22 +128,28 @@ static void Repl(KTN_VM* vm) {
 
         if (isBlank && length > 0 && !hasUnclosed(source, length)) {
             source[length] = '\0';
+
             (void)KTN_Interpret(vm, module, source);
+            
             length = 0;
             firstLine = true;
+            
             fflush(stdout);
             continue;
         }
 
         if (length + lineLen + 1 > capacity) {
             size_t oldCap = capacity;
+            
             capacity = ((oldCap == 0) ? 1024 : oldCap * 2);
             source = (char*)realloc(source, capacity + 1);
+
             if (!source) {
                 fprintf(stderr, "[ERROR]: Out of memory in REPL.\n");
                 exit(74);
             }
         }
+        
         memcpy(source + length, line, lineLen);
         length += lineLen;
 

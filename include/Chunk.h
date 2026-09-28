@@ -105,8 +105,9 @@ typedef enum {
     OP_NEGATE,          //Negates a value.
     OP_INTERPOLATE,
     OP_PRINT,
-    OP_JUMP_IF_FALSE,   
     OP_JUMP,
+    OP_JUMP_IF_FALSE,
+    OP_JUMP_IF_FALSE_POP,
     OP_LOOP,
     OP_CALL,
     OP_CALL_GENERIC,

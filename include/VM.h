@@ -98,17 +98,7 @@ struct KTN_VM {
     KTN_ObjKata* typeArray;
     KTN_ObjKata* typeMap;
 
-    /*
-        KTN_ObjString* strToString;
-        KTN_ObjString* strEquals;
-        KTN_ObjString* strHashCode;
-        KTN_ObjString* strCompare;
-
-        KTN_ObjString* strName;
-        KTN_ObjString* strOrdinal;
-        KTN_ObjString* strValue;
-        KTN_ObjString* strValues;
-    */
+    KTN_ObjNative* defaultToString;
 
     KTN_WellKnownNames wellKnownNames;
 
@@ -155,8 +145,7 @@ void KTN_VMPanic(KTN_VM* vm, const char* format, ...) __attribute__((noreturn));
 
 KTN_InterpretResult KTN_Interpret(KTN_VM* vm, KTN_ObjModule* module, const char* source);
 KTN_InterpretResult InterpretChunk(KTN_VM* vm, KTN_Chunk* chunk);
-KTN_CallStatus KTN_CallAndRun(KTN_VM* vm, int argumentCount);
-
+KTN_CallStatus KTN_CallAndRun(KTN_VM* vm, KTN_Value callee, int argumentCount);
 
 void Push(KTN_VM* vm, KTN_Value value);
 KTN_Value Pop(KTN_VM* vm);

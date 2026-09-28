@@ -170,10 +170,14 @@ static void PrintStackTrace(KTN_VM* vm) {
         if (foundRecursiveness) break;
     }
 
+    KTN_ObjModule* currentModule = NULL;
+
     for (int frameIndex = 0; frameIndex < vm->frameCount; frameIndex++) {
         KTN_CallFrame* frame = &vm->frames[frameIndex];
         KTN_ObjShiki* function = frame->closure->function;
+        
         size_t instruction = (size_t)(frame->ip - function->chunk.code);
+
         if (instruction > 0) instruction--;
 
         int line = KTN_ChunkGetLine(&function->chunk, (int)instruction);
@@ -187,6 +191,15 @@ static void PrintStackTrace(KTN_VM* vm) {
             return;
         }
 
+        if (currentModule != function->module) {
+            currentModule = function->module;
+
+            if (currentModule != NULL) {
+                char* name = (currentModule->file == NULL) ? currentModule->name : currentModule->file;
+                printf("In %s:\n", (name != NULL) ? name : "<unknown>");
+            }
+        }
+        
         fprintf(stderr, COLOR_MAGENTA "   %4d " COLOR_RESET "| ", line);
         if (function->name == NULL)
             fprintf(stderr, COLOR_CYAN "<script>" COLOR_RESET);
@@ -249,6 +262,8 @@ bool KTN_ThrowValue(KTN_VM* vm, KTN_ObjInstance* exception, bool buildTrace) {
         KTN_ErrorFrame* errorFrame = ErrorPeek(vm);
         KTN_CallFrame* handlerCallFrame = errorFrame->frame;
         KTN_Value* handlerStackHead = errorFrame->stackHead;
+
+        errorFrame->value = OBJECT_VALUE(exception);
 
         switch (errorFrame->state) {
             case KTN_EF_WAITING: {
@@ -729,6 +744,23 @@ static DECLARE_NATIVE(RemoveFile) {
     RETURN_VALUE(INT_VALUE(result));
 }
 
+static DECLARE_NATIVE(DefaultToString) {
+    KTN_Value receiver = ARG(0);
+
+    if (!IS_INSTANCE(receiver))
+        RETURN_VALUE(OBJECT_VALUE(ObjectToString(vm, receiver)));
+
+    StringBuilder sb;
+    SBInit(&sb);
+    ObjectAppendToSB(&sb, receiver);
+
+    int length = sb.length;
+    char* buffer = SBDetach(&sb);
+    KTN_ObjString* str = StringTake(vm, buffer, length, false);
+
+    RETURN_VALUE(OBJECT_VALUE(str));
+}
+
 #ifdef DEBUG_PRINT_CODE
 static void PrintCallFrame(KTN_VM* vm, const KTN_CallFrame* frame) {
     KTN_ObjShiki* function = frame->closure->function;
@@ -847,6 +879,8 @@ void VMInit(KTN_VM* vm) {
 
     KTN_WellKnownNamesInit(vm, &vm->wellKnownNames);
 
+    vm->defaultToString = NativeNew(vm, GET_NATIVE(DefaultToString), "toString", "toString(): String", "Returns a default string representation of this instance.");
+
     KTN_DescriptorSetInit(&vm->typeDescriptors);
     TableInit(&vm->compilerState.globalTypes);
     TableInit(&vm->compilerState.declaredGlobals);
@@ -949,6 +983,9 @@ static bool Call(KTN_VM* vm, KTN_ObjClosure* closure, int argumentCount, KTN_Obj
     frame->closure = closure;
     frame->ip = closure->function->chunk.code;
     frame->slots = vm->stackTop - argumentCount - 1;
+    
+    //vm->caughtException = false;
+
 #ifdef DEBUG_PRINT_CODE
     PrintCallFrame(vm, frame);
 #endif
@@ -1476,7 +1513,7 @@ static bool DoInterpolate(KTN_VM* vm, uint16_t numOfElements) {
 
             Push(vm, value);
 
-            KTN_CallStatus status = KTN_CallAndRun(vm, 0);
+            KTN_CallStatus status = KTN_CallAndRun(vm, toString, 0);
             if (status != KTN_CALL_OK) {
                 SBFree(&sb);
                 return (status == KTN_CALL_HANDLED);
@@ -2788,6 +2825,18 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     vm->currentFrame->ip += Offset;
                 break;
             }
+            case OP_JUMP_IF_FALSE_POP: {
+                uint16_t Offset = READ_SHORT();
+                if (IsFalsey(Peek(vm, 0)))
+                    vm->currentFrame->ip += Offset;
+                
+                if (vm->stackTop <= vm->stack + 2) {
+                    KTN_VMPanic(vm, "OP_POP would underflow.");
+                }
+
+                Pop(vm);
+                break;
+            }
             case OP_LOOP: {
                 uint16_t Offset = READ_SHORT();
                 vm->currentFrame->ip -= Offset;
@@ -3130,7 +3179,9 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 }
 
                 vm->caughtException = false;
-                KTN_Value thrownInstance = Pop(vm);
+
+                KTN_ErrorFrame* errorFrame = ErrorPeek(vm);
+                KTN_Value thrownInstance = errorFrame->value;
 
                 if (!KTN_ThrowValue(vm, AS_INSTANCE(thrownInstance), false))
                     return RUNTIME_ERROR(NULL_VALUE);
@@ -3259,10 +3310,10 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
     #undef BINARY_OP
 }
 
-KTN_CallStatus KTN_CallAndRun(KTN_VM *vm, int argumentCount) {
+KTN_CallStatus KTN_CallAndRun(KTN_VM *vm, KTN_Value callee, int argumentCount) {
     int exitFrame = vm->frameCount;
 
-    if (!CallValue(vm, Peek(vm, argumentCount), argumentCount)) {
+    if (!CallValue(vm, callee, argumentCount)) {
         if (vm->caughtException) {
             vm->caughtException = false;
             vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3348,6 +3399,9 @@ KTN_InterpretResult KTN_Interpret(KTN_VM* vm, KTN_ObjModule* module, const char*
     }
 
     Push(vm, OBJECT_VALUE(function));
+    
+    function->module = module;
+
     KTN_ObjClosure* closure = ClosureNew(vm, function);
     Pop(vm);
     Push(vm, OBJECT_VALUE(closure));
@@ -3361,6 +3415,26 @@ KTN_InterpretResult KTN_Interpret(KTN_VM* vm, KTN_ObjModule* module, const char*
 
     if (!module->isMain)
         return topLevel;
+
+    KTN_Table* globals = &vm->globals;
+
+    for (int i = 0; i < globals->count; i++) {
+        KTN_TableEntry* entry = &globals->entries[i];
+
+        if (!IS_CLOSURE(entry->value)) 
+            continue;
+
+        KTN_ObjClosure* closure = AS_CLOSURE(entry->value);
+            
+        if (closure->function->type != TYPE_ENTRY)
+            continue;
+
+        Push(vm, OBJECT_VALUE(module));
+        Push(vm, OBJECT_VALUE(closure));
+        closure->function->module = module;
+        Call(vm, closure, 0, NULL);
+        return Run(vm, 0);
+    }
 
     return topLevel;
 }

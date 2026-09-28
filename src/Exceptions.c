@@ -96,8 +96,8 @@ KTN_Value BuildStackTraceObject(KTN_VM* vm, KTN_ObjInstance* stackTraceInstance)
 
 // Exception(message)
 static KTN_NativeResult ExceptionConstructorNative(KTN_VM* vm, KTN_CallArgs arguments) {
-    EXPECT_ARGC(1);
-    EXPECT_ARG_STRING(0);
+    EXPECT_ARGC(2);
+    EXPECT_ARG_STRING(1);
 
     KTN_ObjInstance* self = AS_INSTANCE(THIS);
 

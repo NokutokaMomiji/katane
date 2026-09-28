@@ -477,6 +477,8 @@ static void MarkRoots(KTN_VM* vm) {
     KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeArray);
     KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeMap);
 
+    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->defaultToString);
+
     TableMark(vm, &vm->globals);
     TableMark(vm, &vm->modules);
     KTN_DescriptorSetMark(vm, &vm->typeDescriptors);

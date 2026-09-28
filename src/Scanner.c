@@ -37,6 +37,21 @@ Scanner scanner;
 static KTN_ScannerSnapshot scannerStateStack[SCANNER_STATE_STACK_MAX];
 static int scannerStateDepth = 0;
 
+void KTN_ScannerStackPrint() {
+    for (int i = 0; i < scanner.stackTop; i++) {
+        ScannerModeFrame* frame = &scanner.stack[i];
+        printf(
+            "[ %s, %d, %c, %s ]",
+            (frame->mode == SCANNER_STRING) ? "SCANNER_STRING" : "SCANNER_INTERPOLATE",
+            frame->depth,
+            frame->stringChar,
+            (frame->isRaw) ? "RAW" : "NORMAL"
+        );
+    }
+
+    printf("\n");
+}
+
 void KTN_ScannerInit(const char* source) {
     scanner.start = source;
     scanner.current = source;
@@ -239,7 +254,7 @@ static KTN_Token ScannerScanString(char stringChar, bool isRaw) {
             ScannerAdvance();
         } else {
             if (currentPeek == '$' && ScannerPeekNext() == '{') {
-                if ((scanner.stackTop + 1) >= MAX_INTERPOLATION_NESTING) {
+                if (scanner.stackTop >= MAX_INTERPOLATION_NESTING) {
                     return TokenError("Max interpolation nesting reached");
                 }
 
@@ -587,6 +602,7 @@ KTN_Token KTN_ScannerScanToken() {
         case '{': {
             if (scanner.stackTop > 0) {
                 ScannerModeFrame* stack = &scanner.stack[scanner.stackTop - 1];
+                
                 if (stack->mode == SCANNER_INTERPOLATION) {
                     stack->depth++;
                 }
@@ -662,19 +678,7 @@ KTN_Token KTN_ScannerScanToken() {
             isRaw = true;
             scanner.start = scanner.current - 1;
         case '\'': 
-        case '"':
-            if (scanner.stackTop > 0) {
-                if ((scanner.stackTop + 1) >= MAX_INTERPOLATION_NESTING)
-                    return TokenError("Maximum interpolation depth reached");
-                
-                ScannerModeFrame* frame = &scanner.stack[scanner.stackTop++];
-                
-                frame->depth = 0;
-                frame->mode = SCANNER_STRING;
-                frame->stringChar = currentChar;
-                frame->isRaw = isRaw;
-            }
-
+        case '"': 
             return ScannerScanString(currentChar, isRaw);
     }
 

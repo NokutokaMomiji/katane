@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include "Debug.h"
+#include "Chunk.h"
 #include "Object.h"
 #include "Value.h"
 
@@ -317,6 +318,8 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
             return JumpInstruction("OP_JUMP", 1, chunk, offset);
         case OP_JUMP_IF_FALSE:
             return JumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset);
+        case OP_JUMP_IF_FALSE_POP:
+            return JumpInstruction("OP_JUMP_IF_FALSE_POP", 1, chunk, offset);
         case OP_LOOP:
             return JumpInstruction("OP_LOOP", -1, chunk, offset);
         case OP_CALL:
@@ -365,7 +368,9 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
         case OP_END_CATCH:
             return SimpleInstruction("OP_END_CATCH", offset);
         case OP_RAISE:
-            return SimpleInstruction("OP_RAISE", offset);
+            return ByteInstruction("OP_RAISE", chunk, offset);
+        case OP_RETHROW:
+            return SimpleInstruction("OP_RETHROW", offset);
         case OP_ASSERT:
             return SimpleInstruction("OP_ASSERT", offset);
         case OP_INSTANCEOF:

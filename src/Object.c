@@ -316,16 +316,14 @@ static void ObjectFormat(StringBuilder* sb, KTN_Value value, VisitedSet* visited
 
         case OBJ_NATIVE: {
             char buffer[256];
-            snprintf(buffer, sizeof(buffer), "<native function \"%s\">",
-                    AS_NATIVE(value)->name);
+            snprintf(buffer, sizeof(buffer), "<native function \"%s\">", AS_NATIVE(value)->name);
             SBAppendCStr(sb, buffer);
             break;
         }
 
         case OBJ_CLASS: {
             char buffer[256];
-            snprintf(buffer, sizeof(buffer), "<kata \"%s\">",
-                    AS_CLASS(value)->className->chars);
+            snprintf(buffer, sizeof(buffer), "<kata \"%s\">", AS_CLASS(value)->className->chars);
             SBAppendCStr(sb, buffer);
             break;
         }
@@ -733,6 +731,9 @@ KTN_ObjKata* KataNew(KTN_VM* vm, KTN_ObjString* name) {
     kata->hasTypedFields = false;
     kata->optionalGenerics = false;
     kata->privateConstructor = false;
+
+    // TODO: Fix KTN_BoundMethod to accept KTN_ObjNative. (Right now it only takes KTN_ObjClosure and crashes)
+    //TableSet(vm, &kata->methods, KTN_NAME(vm, KTN_NAME_TO_STRING), OBJECT_VALUE(vm->defaultToString));
 
     return kata;
 }

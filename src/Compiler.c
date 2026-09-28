@@ -110,6 +110,7 @@ typedef struct Compiler {
     int32_t returnDescriptorIndex;
 
     bool inFinally;
+    bool parsedEntryPoint;
 } Compiler;
 
 typedef struct ClassCompiler {
@@ -467,6 +468,7 @@ static void CompilerInit(Compiler* compiler, KTN_ShikiType type, bool isStatic) 
     compiler->localCount = 0;
     compiler->scopeDepth = 0;
     compiler->inFinally = false;
+    compiler->parsedEntryPoint = false;
     compiler->function = ShikiNew(parser.vm, NULL, type);
     current = compiler;
 
@@ -898,8 +900,7 @@ static uint8_t ArgumentList() {
         } while (Match(TOKEN_COMMA));
     }
 
-    CompilerConsume(TOKEN_PARENTHESIS_CLOSE,
-                                    "Expected ')' after shiki call parameters");
+    CompilerConsume(TOKEN_PARENTHESIS_CLOSE, "Expected ')' after shiki call parameters");
     return argumentCount;
 }
 
@@ -1069,8 +1070,7 @@ static void EmitCheckedSet(uint8_t setOp, int argument, KTN_Token* name) {
     }
 }
 
-static void ResolveExtraAssignments(int getOp, int setOp, int argument,
-                                                                        bool isGlobal, KTN_Token name) {
+static void ResolveExtraAssignments(int getOp, int setOp, int argument, bool isGlobal, KTN_Token name) {
     KTN_Token currentToken = parser.current;
 
     bool isPropertyAssignment =
@@ -1649,7 +1649,7 @@ static void SkipFieldTail() {
                     Check(TOKEN_SQUARE_OPEN))
                 depth++;
 
-            if (Check(TOKEN_BRACKET_CLOSE) || Check(TOKEN_BRACKET_CLOSE) ||
+            if (Check(TOKEN_PARENTHESIS_CLOSE) || Check(TOKEN_BRACKET_CLOSE) ||
                     Check(TOKEN_SQUARE_CLOSE))
                 depth--;
 
@@ -1681,7 +1681,7 @@ static void SkipMethod() {
                     Check(TOKEN_SQUARE_OPEN))
                 depth++;
 
-            if (Check(TOKEN_BRACKET_CLOSE) || Check(TOKEN_BRACKET_CLOSE) ||
+            if (Check(TOKEN_PARENTHESIS_CLOSE) || Check(TOKEN_BRACKET_CLOSE) ||
                     Check(TOKEN_SQUARE_CLOSE))
                 depth--;
 
@@ -1711,7 +1711,7 @@ static void SkipGetter() {
                     Check(TOKEN_SQUARE_OPEN))
                 depth++;
 
-            if (Check(TOKEN_BRACKET_CLOSE) || Check(TOKEN_BRACKET_CLOSE) ||
+            if (Check(TOKEN_PARENTHESIS_CLOSE) || Check(TOKEN_BRACKET_CLOSE) ||
                     Check(TOKEN_SQUARE_CLOSE))
                 depth--;
 
@@ -1744,7 +1744,7 @@ static void SkipSetter() {
                     Check(TOKEN_SQUARE_OPEN))
                 depth++;
 
-            if (Check(TOKEN_BRACKET_CLOSE) || Check(TOKEN_BRACKET_CLOSE) ||
+            if (Check(TOKEN_PARENTHESIS_CLOSE) || Check(TOKEN_BRACKET_CLOSE) ||
                     Check(TOKEN_SQUARE_CLOSE))
                 depth--;
 
@@ -2127,7 +2127,12 @@ static void FunctionDeclaration() {
 
 static void EntryDeclaration() {
     if (current->scopeDepth != 0) {
-        Error("Entry point must be declared at the top level.");
+        Error("Entry point must be declared at the top level");
+        return;
+    }
+
+    if (current->parsedEntryPoint) {
+        Error("Cannot have more than one entry point");
         return;
     }
 
@@ -2135,6 +2140,7 @@ static void EntryDeclaration() {
 
     uint32_t global = ParseVariable("Expected shiki name");
     MarkInitialized();
+    current->parsedEntryPoint = true;
     CompilerFunction(TYPE_ENTRY, false);
     DefineVariable(global);
 }
@@ -2144,10 +2150,12 @@ static void StatementExpression() {
     CompilerExpression();
     CompilerConsume(TOKEN_SEMICOLON, "Expect ';' after expression");
 
-    CompilerEmitByte((!parser.lastExpressionWasAssignment &&
-                                        current->scopeDepth == 0 && current->type == TYPE_SCRIPT)
-                                              ? OP_POP_RESULT
-                                              : OP_POP);
+    CompilerEmitByte(
+  (!parser.lastExpressionWasAssignment && 
+            current->scopeDepth == 0 && 
+            current->type == TYPE_SCRIPT
+        ) ? OP_POP_RESULT : OP_POP
+    );
 }
 
 static void StatementSwitch() {
@@ -2178,7 +2186,6 @@ static void StatementSwitch() {
             if (state == 1) {
                 context.breakJumps[context.breakJumpCount++] = CompilerEmitJump(OP_JUMP);
                 CompilerPatchJump(previousCaseSkip);
-                CompilerEmitByte(OP_POP);
             }
 
             if (caseType == TOKEN_CASE) {
@@ -2187,11 +2194,11 @@ static void StatementSwitch() {
                 CompilerExpression();
                 CompilerConsume(TOKEN_COLON, "Expected ':' after case value");
                 CompilerEmitByte(OP_EQUAL);
-                previousCaseSkip = CompilerEmitJump(OP_JUMP_IF_FALSE);
-                CompilerEmitByte(OP_POP);
+                previousCaseSkip = CompilerEmitJump(OP_JUMP_IF_FALSE_POP);
 
                 for (int i = 0; i < context.fallJumpCount; i++)
                     CompilerPatchJump(context.fallJumps[i]);
+
                 context.fallJumpCount = 0;
             } else {
                 state = 2;
@@ -2200,11 +2207,13 @@ static void StatementSwitch() {
 
                 for (int i = 0; i < context.fallJumpCount; i++)
                     CompilerPatchJump(context.fallJumps[i]);
+
                 context.fallJumpCount = 0;
             }
         } else {
             if (state == 0)
                 Error("Cannot have statements before any case");
+
             CompilerDeclaration();
         }
     }
@@ -2218,7 +2227,6 @@ static void StatementSwitch() {
         // Patch the last case's JUMP_IF_FALSE so the skip (no-match) path
         // lands here, then pop the comparison result it still has on the stack.
         CompilerPatchJump(previousCaseSkip);
-        CompilerEmitByte(OP_POP);
     }
 
     for (int i = 0; i < context.breakJumpCount; i++)
@@ -2311,8 +2319,7 @@ static void StatementFor() {
     if (!Match(TOKEN_SEMICOLON)) {
         CompilerExpression();
         CompilerConsume(TOKEN_SEMICOLON, "Expected ';' after loop condition");
-        exitJump = CompilerEmitJump(OP_JUMP_IF_FALSE);
-        CompilerEmitByte(OP_POP);
+        exitJump = CompilerEmitJump(OP_JUMP_IF_FALSE_POP);
     }
 
     // Optional increment statement.
@@ -2363,10 +2370,6 @@ static void StatementFor() {
     // If we do have an exit condition (meaning we generated an exit jump), we patch it here.
     if (exitJump != -1) {
         CompilerPatchJump(exitJump);
-        
-        // This pop is for popping off the bool exit condition value from the stack (under
-        //  normal execution).
-        CompilerEmitByte(OP_POP);
         
         // Patch any break jumps to go after the condition value (since it will have already been popped)
         for (int i = 0; i < context.breakJumpCount; i++)
@@ -2498,17 +2501,17 @@ static void ExpressionChoice(bool canAssign) {
                 Error("Cannot have a case after default in choice");
                 break;
             }
+
             if (previousCaseSkip != -1) {
                 CompilerPatchJump(previousCaseSkip);
-                CompilerEmitByte(OP_POP);
             }
 
             CompilerEmitByte(OP_DUPLICATE);
             CompilerExpression();
             CompilerConsume(TOKEN_COLON, "Expected ':' after case value");
             CompilerEmitByte(OP_EQUAL);
-            previousCaseSkip = CompilerEmitJump(OP_JUMP_IF_FALSE);
-            CompilerEmitByte(OP_POP);
+
+            previousCaseSkip = CompilerEmitJump(OP_JUMP_IF_FALSE_POP);
 
             CompilerExpression();
             Match(TOKEN_COMMA);
@@ -2519,15 +2522,18 @@ static void ExpressionChoice(bool canAssign) {
                 caseEnds[caseEndCount++] = CompilerEmitJump(OP_JUMP);
         } else if (Match(TOKEN_DEFAULT)) {
             hasDefault = true;
+
             if (previousCaseSkip != -1) {
                 CompilerPatchJump(previousCaseSkip);
-                CompilerEmitByte(OP_POP);
                 previousCaseSkip = -1;
             }
+            
             CompilerConsume(TOKEN_COLON, "Expected ':' after default");
             CompilerEmitByte(OP_POP);
             CompilerExpression();
+            
             Match(TOKEN_COMMA);
+            
             if (caseEndCount < MAX_CASES)
                 caseEnds[caseEndCount++] = CompilerEmitJump(OP_JUMP);
         } else {
@@ -2538,7 +2544,6 @@ static void ExpressionChoice(bool canAssign) {
 
     if (previousCaseSkip != -1) {
         CompilerPatchJump(previousCaseSkip);
-        CompilerEmitByte(OP_POP);
     }
 
     if (!hasDefault) {
@@ -2555,14 +2560,12 @@ static void StatementIf() {
     CompilerExpression();
     CompilerConsume(TOKEN_PARENTHESIS_CLOSE, "Expected ')' after condition");
 
-    int thenJump = CompilerEmitJump(OP_JUMP_IF_FALSE);
-    CompilerEmitByte(OP_POP);
+    int thenJump = CompilerEmitJump(OP_JUMP_IF_FALSE_POP);
     CompilerStatement();
 
     int elseJump = CompilerEmitJump(OP_JUMP);
 
     CompilerPatchJump(thenJump);
-    CompilerEmitByte(OP_POP);
 
     if (Match(TOKEN_ELSE))
         CompilerStatement();
@@ -2622,8 +2625,9 @@ static void StatementPrint() {
     CompilerEmitByte(OP_PRINT);
 }
 
-static KTN_MAYBE_UNUSED void StatementRethrow() {
-
+static void StatementRethrow() {
+    CompilerConsume(TOKEN_SEMICOLON, "Expected ';' after throw expression");
+    CompilerEmitByte(OP_RETHROW);
 }
 
 static void StatementReturn() {
@@ -2673,8 +2677,7 @@ static void StatementWhile() {
     CompilerExpression();
     CompilerConsume(TOKEN_PARENTHESIS_CLOSE, "Expected ')' after condition");
 
-    int exitJump = CompilerEmitJump(OP_JUMP_IF_FALSE);
-    CompilerEmitByte(OP_POP);
+    int exitJump = CompilerEmitJump(OP_JUMP_IF_FALSE_POP);
     CompilerStatement();
 
     CompilerEmitLoop(loopStart);
@@ -2682,7 +2685,6 @@ static void StatementWhile() {
     CompilerPatchJump(exitJump);
     for (int i = 0; i < context.breakJumpCount; i++)
         CompilerPatchJump(context.breakJumps[i]);
-    CompilerEmitByte(OP_POP);
 
     currentBreakable = context.enclosing;
 }
@@ -2750,10 +2752,8 @@ static void StatementTry() {
             NamedVariable(typeName, false);
             CompilerEmitByte(OP_INSTANCEOF);
 
-            // If false, skip to next handler.  JUMP_IF_FALSE does NOT pop,
-            // so we clean up the bool ourselves on both paths.
-            int skipThisClause = CompilerEmitJump(OP_JUMP_IF_FALSE);
-            CompilerEmitByte(OP_POP); // pop bool=true
+            // If false, skip to next handler.
+            int skipThisClause = CompilerEmitJump(OP_JUMP_IF_FALSE_POP);
 
             // Bind variables inside a new scope.
             // At this point the stack has: [..., exception]. 
@@ -2784,7 +2784,6 @@ static void StatementTry() {
 
             // Patch the skip: land here when instanceof was false.
             CompilerPatchJump(skipThisClause);
-            CompilerEmitByte(OP_POP);
 
         } else {
             // Untyped catch-all: catch (varName) { }
@@ -2820,7 +2819,7 @@ static void StatementTry() {
     // If no catch-all matched (or there was none), rethrow the exception still on
     // stack.
     if (!hasCatchAll) {
-        CompilerEmitByte(OP_RAISE);
+        CompilerEmitBytes(OP_RAISE, 0x00);
     }
 
     // Patch all "jump to end" emitted from each catch body, and the normal-path
@@ -2854,7 +2853,7 @@ static void StatementThrow() {
     // The expression must evaluate to an Exception subclass instance at runtime.
     CompilerExpression();
     CompilerConsume(TOKEN_SEMICOLON, "Expected ';' after throw expression");
-    CompilerEmitByte(OP_RAISE);
+    CompilerEmitBytes(OP_RAISE, 0x01);
 }
 
 static void StatementAssert() {
@@ -2882,18 +2881,36 @@ static void CompilerSynchronize() {
             return;
 
         switch (parser.current.type) {
-        case TOKEN_CLASS:
-        case TOKEN_FUNCTION:
-        case TOKEN_ENTRY:
-        case TOKEN_VAR:
-        case TOKEN_FOR:
-        case TOKEN_IF:
-        case TOKEN_SWITCH:
-        case TOKEN_WHILE:
-        case TOKEN_PRINT:
-        case TOKEN_RETURN:
-            return;
-        default:;
+            case TOKEN_CLASS:
+            case TOKEN_FUNCTION:
+            case TOKEN_ENTRY:
+            case TOKEN_VAR:
+            case TOKEN_CONST:
+            case TOKEN_FINAL:
+            case TOKEN_IMPORT:
+            case TOKEN_USING:
+
+            case TOKEN_IF:
+            case TOKEN_WHILE:
+            case TOKEN_FOR:
+            case TOKEN_SWITCH:
+            case TOKEN_CASE:
+            case TOKEN_DEFAULT:
+            case TOKEN_RETURN:
+            case TOKEN_PRINT:
+            case TOKEN_TRY:
+            case TOKEN_CATCH:
+            case TOKEN_FINALLY:
+            case TOKEN_THROW:
+            case TOKEN_RETHROW:
+            case TOKEN_ASSERT:
+            case TOKEN_BREAK:
+            case TOKEN_CONTINUE:
+            case TOKEN_FALL:
+
+            case TOKEN_BRACKET_CLOSE:
+                return;
+            default:;
         }
 
         CompilerAdvance();
@@ -2941,6 +2958,8 @@ static void CompilerStatement() {
         StatementTry();
     } else if (Match(TOKEN_THROW)) {
         StatementThrow();
+    } else if (Match(TOKEN_RETHROW)) {
+        StatementRethrow();
     } else if (Match(TOKEN_ASSERT)) {
         StatementAssert();
     } else if (Match(TOKEN_BREAK)) {
@@ -3047,7 +3066,7 @@ static void CompilerString(bool canAssign) {
 /// TOKEN_STRING " d"
 static void CompilerInterpolation(bool canAssign) {
     uint16_t count = 0;
-    do {
+    for (;;) {
         if (count + 2 >= UINT16_COUNT) {
             Error("Maximum interpolation elements reached");
         }
@@ -3069,12 +3088,18 @@ static void CompilerInterpolation(bool canAssign) {
         // TOKEN_IDENTIFIER c)
         CompilerExpression();
         count++;
-    } while (Match(TOKEN_INTERPOLATION));
 
-    if (parser.previous.type != TOKEN_STRING) {
+        if (Match(TOKEN_INTERPOLATION))
+            continue;
+
+        if (count + 1 >= UINT16_COUNT) {
+            Error("Maximum interpolation elements reached");
+        }
+
         CompilerConsume(TOKEN_STRING, "Expected end of string interpolation");
         CompilerString(false);
         count++;
+        break;
     }
 
     CompilerEmitByte(OP_INTERPOLATE);
