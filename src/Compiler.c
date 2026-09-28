@@ -13,6 +13,7 @@
 #include "Scanner.h"
 #include "Utilities.h"
 #include "Config.h"
+#include "Value.h"
 
 typedef struct {
     KTN_Token current;
@@ -3020,13 +3021,64 @@ static void CompilerNumber(bool canAssign) {
 }
 
 static void CompilerString(bool canAssign) {
+    bool isInterpolation = (parser.previous.type == TOKEN_INTERPOLATION);
+    
     const char* rawString = parser.previous.start + 1;
-    int rawLength = parser.previous.length - 2;
+    int rawLength = (isInterpolation) ? parser.previous.length - 1 : parser.previous.length - 2;
+
+    if (parser.previous.isRaw) {
+        CompilerEmitConstant(OBJECT_VALUE(STRING_COPY(parser.vm, rawString, rawLength)));
+        return;
+    }
 
     int outputLength = 0;
     char* decoded = ProcessEscapes(rawString, rawLength, &outputLength);
 
     CompilerEmitConstant(OBJECT_VALUE(STRING_COPY(parser.vm, decoded, outputLength)));
+}
+
+/// Compilers a string with interpolated expressions.
+/// 
+/// String "a ${b + c} d" turns into:
+/// TOKEN_INTERPOLATION "a "
+/// TOKEN_IDENTIFIER b
+/// TOKEN_ADD
+/// TOKEN_IDENTIFIER c
+/// TOKEN_STRING " d"
+static void CompilerInterpolation(bool canAssign) {
+    uint16_t count = 0;
+    do {
+        if (count + 2 >= UINT16_COUNT) {
+            Error("Maximum interpolation elements reached");
+        }
+
+        // Compile the string section of the interpolation.
+        // (i.e. TOKEN_INTERPOLATION "a ")
+        CompilerString(false);
+        count++;
+
+        // Check if the previous string part was the end of the string.
+        // (i.e. TOKEN_STRING " d")
+        if (parser.previous.type == TOKEN_STRING)
+            break;
+        
+        // Compile the expression part that will be interpolated.
+        // (i.e. 
+        // TOKEN_IDENTIFIER b
+        // TOKEN_ADD
+        // TOKEN_IDENTIFIER c)
+        CompilerExpression();
+        count++;
+    } while (Match(TOKEN_INTERPOLATION));
+
+    if (parser.previous.type != TOKEN_STRING) {
+        CompilerConsume(TOKEN_STRING, "Expected end of string interpolation");
+        CompilerString(false);
+        count++;
+    }
+
+    CompilerEmitByte(OP_INTERPOLATE);
+    CompilerEmitShort(count);
 }
 
 static void CompilerArray(bool canAssign) {
@@ -3435,6 +3487,7 @@ ParseRule rules[] = {
         [TOKEN_IS] = {NULL, CompilerBinary, PREC_COMPARISON},
         [TOKEN_IDENTIFIER] = {CompilerVariable, NULL, PREC_NONE},
         [TOKEN_STRING] = {CompilerString, NULL, PREC_NONE},
+        [TOKEN_INTERPOLATION] = {CompilerInterpolation, NULL, PREC_NONE},
         [TOKEN_NUMBER] = {CompilerNumber, NULL, PREC_NONE},
         [TOKEN_INT] = {CompilerNumber, NULL, PREC_NONE},
         [TOKEN_BINARY] = {CompilerNumber, NULL, PREC_NONE},

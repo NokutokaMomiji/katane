@@ -7,6 +7,7 @@
 #include "Chunk.h"
 #include "Table.h"
 #include "HashMap.h"
+#include "Utilities.h"
 
 typedef struct KTN_ObjTypeDescriptor KTN_ObjTypeDescriptor;
 typedef struct KTN_ObjKata KTN_ObjKata;
@@ -406,6 +407,7 @@ KTN_ObjString* KTN_GetWellKnownName(KTN_VM* vm, KTN_WellKnownName id);
 void ObjectPrint(KTN_Value value);
 void ObjectRepr(KTN_Value value, bool shortenStrings);
 KTN_ObjString* ObjectToString(KTN_VM* vm, KTN_Value value);
+void ObjectAppendToSB(StringBuilder* sb, KTN_Value value);
 
 static inline bool IsObjectType(KTN_Value value, KTN_ObjectType type) {
     return (IS_OBJECT(value) && AS_OBJECT(value)->type == type);

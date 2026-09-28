@@ -1,7 +1,9 @@
 #include "HashMap.h"
+#include "Table.h"
 #include "TypeDescriptor.h"
 #include "Value.h"
 #include <ctype.h>
+#include <stdint.h>
 #define _GNU_SOURCE
 #include <stdarg.h>
 #include <stdio.h>
@@ -1449,6 +1451,76 @@ static void Concatenate(KTN_VM* vm) {
     Push(vm, OBJECT_VALUE(Result));
 }
 
+// Returns false only if the VM must unwind (uncaught error).
+// Returns true both on success and on caught exception.
+static bool DoInterpolate(KTN_VM* vm, uint16_t numOfElements) {
+    StringBuilder sb;
+    SBInit(&sb);
+
+    KTN_Value* elements = vm->stackTop - numOfElements;
+
+    for (uint16_t i = 0; i < numOfElements; i++) {
+        KTN_Value value = elements[i];
+
+        if (IS_INSTANCE(value)) {
+            KTN_ObjInstance* instance = AS_INSTANCE(value);
+            KTN_Value toString;
+
+            if (!TableGet(&instance->kata->methods, KTN_NAME(vm, KTN_NAME_TO_STRING), &toString)) {
+                ObjectAppendToSB(&sb, value);
+                continue;
+            }
+
+            Push(vm, value);
+
+            if (!CallValue(vm, toString, 0)) {
+                SBFree(&sb);
+
+                if (vm->caughtException) {
+                    vm->caughtException = false;
+                    vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                    return true;
+                }
+
+                return false;
+            }
+
+            vm->currentFrame = &vm->frames[vm->frameCount - 1];
+            KTN_Value result = Pop(vm);
+
+            if (!IS_STRING(result)) {
+                SBFree(&sb);
+
+                if (!KTN_ThrowTypeError(vm, "String", KTN_ValueTypeName(result), "toString return type error")) {
+                    return false;
+                }
+
+                vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                return true;
+            }
+
+            KTN_ObjString* str = AS_STRING(result);
+            SBAppend(&sb, str->chars, str->length);
+            continue;
+        }
+
+        ObjectAppendToSB(&sb, value);
+    }
+
+    int length = sb.length;
+    char* buffer = SBDetach(&sb);
+
+    if (buffer == NULL)
+        KTN_VMPanic(vm, "StringBuilder buffer was null.");
+
+    KTN_ObjString* final = StringTake(vm, buffer, length, false);
+
+    PopN(vm, numOfElements);
+    Push(vm, OBJECT_VALUE(final));
+
+    return true;
+}
+
 static KTN_MAYBE_UNUSED void dumpVMState(KTN_VM* vm, const char* reason) {
     KTN_CallFrame* frame = &vm->frames[vm->frameCount - 1];
     KTN_ObjShiki* function = frame->closure->function;
@@ -2688,6 +2760,14 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     Push(vm, INT_VALUE(-AS_INT(popped)));
                 else
                     Push(vm, DOUBLE_VALUE(-AS_NUMERIC(popped)));
+                break;
+            }
+            case OP_INTERPOLATE: {
+                uint16_t numOfElements = READ_SHORT();
+
+                if (!DoInterpolate(vm, numOfElements))
+                    return RUNTIME_ERROR(NULL_VALUE);
+                
                 break;
             }
             case OP_PRINT: {

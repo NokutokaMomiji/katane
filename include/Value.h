@@ -122,7 +122,7 @@ typedef struct {
 #define STRING_COPY(vm, value, length) StringCopy(vm, value, length, true)
 #define STRING_TAKE(vm, value, length) StringTake(vm, value, length, true)
 #define STRING_COPY_RAW(vm, value, length) StringCopy(vm, value, length, false)
-#define STRING_TAKE_RAW(vm, value, length) StringCopy(vm, value, length, false)
+#define STRING_TAKE_RAW(vm, value, length) StringTake(vm, value, length, false)
 
 typedef struct {
     uint32_t capacity;   // Contains the full capacity of the array.

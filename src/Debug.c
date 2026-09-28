@@ -250,7 +250,7 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
         case OP_INIT_PROPERTY:
             return InitPropertyInstruction("OP_INIT_PROPERTY", chunk, offset);
         case OP_INIT_PROPERTY_TYPED:
-            return InitTypedPropertyInstruction("OP_INIT_TYPED_PROPERTY", chunk, offset);
+            return InitTypedPropertyInstruction("OP_INIT_PROPERTY_TYPED", chunk, offset);
         case OP_GET_SUPER:
             return ConstantLongInstruction("OP_GET_SUPER", chunk, offset);
         case OP_MARK_PRIVATE:
@@ -309,6 +309,8 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
             return SimpleInstruction("OP_RETURN", offset);
         case OP_NOT:
             return SimpleInstruction("OP_NOT", offset);
+        case OP_INTERPOLATE:
+            return ShortInstruction("OP_INTERPOLATE", chunk, offset);
         case OP_PRINT:
             return SimpleInstruction("OP_PRINT", offset);
         case OP_JUMP:

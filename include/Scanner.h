@@ -114,6 +114,7 @@ typedef struct {
     const char* start;
     int length;
     int line;
+    bool isRaw;
 } KTN_Token;
 
 /// @brief Represents a snapshot of a scanner at a given point in class.

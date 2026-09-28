@@ -103,6 +103,7 @@ typedef enum {
     OP_SHIFT_RIGHT,   // >>
     OP_NOT,
     OP_NEGATE,          //Negates a value.
+    OP_INTERPOLATE,
     OP_PRINT,
     OP_JUMP_IF_FALSE,   
     OP_JUMP,

@@ -19,7 +19,8 @@ typedef struct {
     ScannerMode mode;
     int depth;
     char stringChar;
-} ScannerStack;
+    bool isRaw;
+} ScannerModeFrame;
 
 typedef struct {
     const char* start;
@@ -28,7 +29,7 @@ typedef struct {
     int previousLine;
     char* source;
 
-    ScannerStack stack[MAX_INTERPOLATION_NESTING];
+    ScannerModeFrame stack[MAX_INTERPOLATION_NESTING];
     int stackTop;
 } Scanner;
 
@@ -103,6 +104,7 @@ static KTN_Token TokenMake(KTN_TokenType type) {
     newToken.start = scanner.start;
     newToken.length = (int)(scanner.current - scanner.start);
     newToken.line = scanner.line;
+    newToken.isRaw = false;
 
     return newToken;
 }
@@ -114,6 +116,7 @@ static KTN_Token TokenError(const char* msg) {
     errorToken.start = msg;
     errorToken.length = (int)strlen(msg);
     errorToken.line = scanner.line;
+    errorToken.isRaw = false;
 
     return errorToken;
 }
@@ -214,7 +217,7 @@ static void SkipWhitespace() {
     }
 }
 
-static KTN_Token ScannerScanString(char stringChar) {
+static KTN_Token ScannerScanString(char stringChar, bool isRaw) {
     while (!ScannerAtEnd()) {
         char currentPeek = ScannerPeek();
 
@@ -226,7 +229,7 @@ static KTN_Token ScannerScanString(char stringChar) {
             scanner.line++;
         }
 
-        if (currentPeek == '\\') {
+        if (currentPeek == '\\' && !isRaw) {
             ScannerAdvance();
             
             if (ScannerAtEnd()) {
@@ -239,13 +242,20 @@ static KTN_Token ScannerScanString(char stringChar) {
                 if ((scanner.stackTop + 1) >= MAX_INTERPOLATION_NESTING) {
                     return TokenError("Max interpolation nesting reached");
                 }
+
                 KTN_Token token = TokenMake(TOKEN_INTERPOLATION);
-                ScannerStack* stack = &scanner.stack[scanner.stackTop++];
+                token.isRaw = isRaw;
+
+                ScannerModeFrame* stack = &scanner.stack[scanner.stackTop++];
+                
                 stack->mode = SCANNER_INTERPOLATION;
                 stack->depth = 0;
                 stack->stringChar = stringChar;
-                ScannerAdvance();
-                ScannerAdvance();
+                stack->isRaw = isRaw;
+                
+                ScannerAdvance(); // Consume '$'.
+                ScannerAdvance(); // Consume '{'.
+
                 return token;
             }
             ScannerAdvance();
@@ -257,7 +267,9 @@ static KTN_Token ScannerScanString(char stringChar) {
     }
 
     ScannerAdvance();
-    return TokenMake(TOKEN_STRING);
+    KTN_Token token = TokenMake(TOKEN_STRING);
+    token.isRaw = isRaw;
+    return token;
 }
 
 
@@ -312,8 +324,7 @@ static KTN_Token ScannerScanNumber() {
     if (ScannerPeek() == '.' && IsDigit(ScannerPeekNext())) {
         isFloat = true;
         ScannerAdvance(); // consume '.'
-        while (IsDigit(ScannerPeek()) ||
-               (ScannerPeek() == '_' && IsDigit(ScannerPeekNext())))
+        while (IsDigit(ScannerPeek()) || (ScannerPeek() == '_' && IsDigit(ScannerPeekNext())))
             ScannerAdvance();
     }
 
@@ -499,13 +510,8 @@ static KTN_TokenType IdentifierType() {
 static KTN_Token ScannerScanIdentifier() {
     while (ScannerIsIdentifierContinue()) {
         ScannerAdvanceCodepoint();
-        continue;
-
-        if ((unsigned char)*scanner.current >= 0x80)
-            ScannerAdvanceCodepoint();
-        else
-            ScannerAdvance();
     }
+
     return TokenMake(IdentifierType());
 }
 
@@ -565,17 +571,22 @@ KTN_Token KTN_ScannerScanToken() {
     if ((unsigned char)currentChar >= 0x80)
         return ScannerScanIdentifier();
 
-    if (IsAlphanumeric(currentChar))
-        return ScannerScanIdentifier();
+    if (IsAlphanumeric(currentChar)) {
+        if (currentChar != 'r' || !(ScannerPeek() == '"' || ScannerPeek() == '\''))    
+            return ScannerScanIdentifier();
+    }
+
     if (IsDigit(currentChar))
         return ScannerScanNumber();
+
+    bool isRaw = false;
   
     switch (currentChar) {
         case '(': return TokenMake(TOKEN_PARENTHESIS_OPEN); break;
         case ')': return TokenMake(TOKEN_PARENTHESIS_CLOSE); break;
         case '{': {
             if (scanner.stackTop > 0) {
-                ScannerStack* stack = &scanner.stack[scanner.stackTop - 1];
+                ScannerModeFrame* stack = &scanner.stack[scanner.stackTop - 1];
                 if (stack->mode == SCANNER_INTERPOLATION) {
                     stack->depth++;
                 }
@@ -585,14 +596,16 @@ KTN_Token KTN_ScannerScanToken() {
         case '}': {
             if (scanner.stackTop == 0)
                 return TokenMake(TOKEN_BRACKET_CLOSE);
-            ScannerStack* frame = &scanner.stack[scanner.stackTop - 1];
+            
+            ScannerModeFrame* frame = &scanner.stack[scanner.stackTop - 1];
+            
             if (frame->depth > 0) {
                 frame->depth--;
                 return TokenMake(TOKEN_BRACKET_CLOSE) ;
             }
 
             scanner.stackTop--;
-            return ScannerScanString(frame->stringChar);
+            return ScannerScanString(frame->stringChar, frame->isRaw);
 
             break;
         }
@@ -644,16 +657,25 @@ KTN_Token KTN_ScannerScanToken() {
             return TokenMake(ScannerMatch('=') ? TOKEN_SMALLER_EQ : TOKEN_SMALLER);
         case '?':
             return TokenMake(TOKEN_QUESTION);
+        case 'r':
+            currentChar = ScannerAdvance();
+            isRaw = true;
+            scanner.start = scanner.current - 1;
         case '\'': 
         case '"':
             if (scanner.stackTop > 0) {
-                if ((scanner.stackTop + 1) >= MAX_INTERPOLATION_NESTING) return TokenError("Maximum interpolation depth reached");
-                ScannerStack* frame = &scanner.stack[scanner.stackTop++];
+                if ((scanner.stackTop + 1) >= MAX_INTERPOLATION_NESTING)
+                    return TokenError("Maximum interpolation depth reached");
+                
+                ScannerModeFrame* frame = &scanner.stack[scanner.stackTop++];
+                
                 frame->depth = 0;
                 frame->mode = SCANNER_STRING;
                 frame->stringChar = currentChar;
+                frame->isRaw = isRaw;
             }
-            return ScannerScanString(currentChar);
+
+            return ScannerScanString(currentChar, isRaw);
     }
 
     return TokenError("Unexpected character");
