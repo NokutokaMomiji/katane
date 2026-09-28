@@ -4,11 +4,11 @@
 
 #include "Common.h"
 #include "Scanner.h"
+#include "Config.h"
 #include "Utilities.h"
 #include "Memory.h"
 
 #define SCANNER_STATE_STACK_MAX 64
-#define SCANNER_INTERPOLATION_MAX 8
 
 typedef enum {
     SCANNER_STRING,
@@ -18,6 +18,7 @@ typedef enum {
 typedef struct {
     ScannerMode mode;
     int depth;
+    char stringChar;
 } ScannerStack;
 
 typedef struct {
@@ -27,12 +28,11 @@ typedef struct {
     int previousLine;
     char* source;
 
-    ScannerStack stack;
+    ScannerStack stack[MAX_INTERPOLATION_NESTING];
     int stackTop;
 } Scanner;
 
 Scanner scanner;
-bool inStringInterpolation = false;
 static KTN_ScannerSnapshot scannerStateStack[SCANNER_STATE_STACK_MAX];
 static int scannerStateDepth = 0;
 
@@ -42,6 +42,7 @@ void KTN_ScannerInit(const char* source) {
     scanner.line = 1;
     scanner.previousLine = 0;
     scanner.source = NULL;
+    scanner.stackTop = 0;
 }
 
 static bool ScannerAtEnd() {
@@ -234,6 +235,19 @@ static KTN_Token ScannerScanString(char stringChar) {
             
             ScannerAdvance();
         } else {
+            if (currentPeek == '$' && ScannerPeekNext() == '{') {
+                if ((scanner.stackTop + 1) >= MAX_INTERPOLATION_NESTING) {
+                    return TokenError("Max interpolation nesting reached");
+                }
+                KTN_Token token = TokenMake(TOKEN_INTERPOLATION);
+                ScannerStack* stack = &scanner.stack[scanner.stackTop++];
+                stack->mode = SCANNER_INTERPOLATION;
+                stack->depth = 0;
+                stack->stringChar = stringChar;
+                ScannerAdvance();
+                ScannerAdvance();
+                return token;
+            }
             ScannerAdvance();
         }
     }
@@ -559,9 +573,29 @@ KTN_Token KTN_ScannerScanToken() {
     switch (currentChar) {
         case '(': return TokenMake(TOKEN_PARENTHESIS_OPEN); break;
         case ')': return TokenMake(TOKEN_PARENTHESIS_CLOSE); break;
-        case '{':
+        case '{': {
+            if (scanner.stackTop > 0) {
+                ScannerStack* stack = &scanner.stack[scanner.stackTop - 1];
+                if (stack->mode == SCANNER_INTERPOLATION) {
+                    stack->depth++;
+                }
+            }
             return TokenMake(TOKEN_BRACKET_OPEN);
-        case '}': return TokenMake(TOKEN_BRACKET_CLOSE); break;
+        }
+        case '}': {
+            if (scanner.stackTop == 0)
+                return TokenMake(TOKEN_BRACKET_CLOSE);
+            ScannerStack* frame = &scanner.stack[scanner.stackTop - 1];
+            if (frame->depth > 0) {
+                frame->depth--;
+                return TokenMake(TOKEN_BRACKET_CLOSE) ;
+            }
+
+            scanner.stackTop--;
+            return ScannerScanString(frame->stringChar);
+
+            break;
+        }
         case '[': return TokenMake(TOKEN_SQUARE_OPEN); break;
         case ']': return TokenMake(TOKEN_SQUARE_CLOSE); break;
         case ',': return TokenMake(TOKEN_COMMA); break;
@@ -611,7 +645,14 @@ KTN_Token KTN_ScannerScanToken() {
         case '?':
             return TokenMake(TOKEN_QUESTION);
         case '\'': 
-        case '"': 
+        case '"':
+            if (scanner.stackTop > 0) {
+                if ((scanner.stackTop + 1) >= MAX_INTERPOLATION_NESTING) return TokenError("Maximum interpolation depth reached");
+                ScannerStack* frame = &scanner.stack[scanner.stackTop++];
+                frame->depth = 0;
+                frame->mode = SCANNER_STRING;
+                frame->stringChar = currentChar;
+            }
             return ScannerScanString(currentChar);
     }
 
