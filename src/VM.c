@@ -3,6 +3,7 @@
 #include "TypeDescriptor.h"
 #include "Value.h"
 #include <ctype.h>
+#include <stdbool.h>
 #include <stdint.h>
 #define _GNU_SOURCE
 #include <stdarg.h>
@@ -172,7 +173,8 @@ static void PrintStackTrace(KTN_VM* vm) {
     for (int frameIndex = 0; frameIndex < vm->frameCount; frameIndex++) {
         KTN_CallFrame* frame = &vm->frames[frameIndex];
         KTN_ObjShiki* function = frame->closure->function;
-        size_t instruction = (size_t)(frame->ip - function->chunk.code - 1);
+        size_t instruction = (size_t)(frame->ip - function->chunk.code);
+        if (instruction > 0) instruction--;
 
         int line = KTN_ChunkGetLine(&function->chunk, (int)instruction);
         char* content = KTN_ChunkGetSource(&function->chunk, (int)instruction);
@@ -227,7 +229,8 @@ bool KTN_ThrowValue(KTN_VM* vm, KTN_ObjInstance* exception, bool buildTrace) {
             if (vm->frameCount > 0) {
                 KTN_CallFrame* frame = &vm->frames[vm->frameCount - 1];
                 KTN_ObjShiki* function = frame->closure->function;
-                size_t instruction = (size_t)(frame->ip - function->chunk.code - 1);
+                size_t instruction = (size_t)(frame->ip - function->chunk.code);
+                if (instruction > 0) instruction--;
                 int line = KTN_ChunkGetLine(&function->chunk, (int)instruction);
                 char* content = KTN_ChunkGetSource(&function->chunk, (int)instruction);
 
@@ -1473,19 +1476,12 @@ static bool DoInterpolate(KTN_VM* vm, uint16_t numOfElements) {
 
             Push(vm, value);
 
-            if (!CallValue(vm, toString, 0)) {
+            KTN_CallStatus status = KTN_CallAndRun(vm, 0);
+            if (status != KTN_CALL_OK) {
                 SBFree(&sb);
-
-                if (vm->caughtException) {
-                    vm->caughtException = false;
-                    vm->currentFrame = &vm->frames[vm->frameCount - 1];
-                    return true;
-                }
-
-                return false;
+                return (status == KTN_CALL_HANDLED);
             }
 
-            vm->currentFrame = &vm->frames[vm->frameCount - 1];
             KTN_Value result = Pop(vm);
 
             if (!IS_STRING(result)) {
@@ -1628,6 +1624,12 @@ void KTN_VMPanic(KTN_VM* vm, const char* format, ...) {
 }
 
 static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
+    if (vm->frameCount <= 0)
+        return RUNTIME_ERROR(NULL_VALUE);
+
+    if (vm->frameCount <= exitFrame) {
+        return RUNTIME_OK(vm->finalResult); 
+    }
     vm->currentFrame = &vm->frames[vm->frameCount - 1];
 
     #define READ_BYTE() (*vm->currentFrame->ip++)
@@ -3130,7 +3132,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 vm->caughtException = false;
                 KTN_Value thrownInstance = Pop(vm);
 
-                if (!KTN_ThrowValue(vm, AS_INSTANCE(thrownInstance), true))
+                if (!KTN_ThrowValue(vm, AS_INSTANCE(thrownInstance), false))
                     return RUNTIME_ERROR(NULL_VALUE);
 
                 vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3255,6 +3257,34 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
     #undef READ_SHORT
     #undef READ_STRING
     #undef BINARY_OP
+}
+
+KTN_CallStatus KTN_CallAndRun(KTN_VM *vm, int argumentCount) {
+    int exitFrame = vm->frameCount;
+
+    if (!CallValue(vm, Peek(vm, argumentCount), argumentCount)) {
+        if (vm->caughtException) {
+            vm->caughtException = false;
+            vm->currentFrame = &vm->frames[vm->frameCount - 1];
+            return KTN_CALL_HANDLED;
+        }
+
+        return KTN_CALL_ERROR;
+    }
+
+    KTN_InterpretResult result = Run(vm, exitFrame);
+
+    if (result.status != INTERPRET_OK) {
+        return KTN_CALL_ERROR;
+    }
+    
+    if (vm->caughtException) {
+        vm->caughtException = false;
+        vm->currentFrame = &vm->frames[vm->frameCount - 1];
+        return KTN_CALL_HANDLED;
+    }
+
+    return KTN_CALL_OK;
 }
 
 void registerModuleFile(KTN_VM* vm, KTN_ObjModule* module) {

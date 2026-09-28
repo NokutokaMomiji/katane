@@ -128,6 +128,12 @@ struct KTN_VM {
 };
 
 typedef enum {
+    KTN_CALL_OK,
+    KTN_CALL_HANDLED,
+    KTN_CALL_ERROR
+} KTN_CallStatus;
+
+typedef enum {
     INTERPRET_OK,
     INTERPRET_COMPILE_ERROR,
     INTERPRET_RUNTIME_ERROR
@@ -149,6 +155,8 @@ void KTN_VMPanic(KTN_VM* vm, const char* format, ...) __attribute__((noreturn));
 
 KTN_InterpretResult KTN_Interpret(KTN_VM* vm, KTN_ObjModule* module, const char* source);
 KTN_InterpretResult InterpretChunk(KTN_VM* vm, KTN_Chunk* chunk);
+KTN_CallStatus KTN_CallAndRun(KTN_VM* vm, int argumentCount);
+
 
 void Push(KTN_VM* vm, KTN_Value value);
 KTN_Value Pop(KTN_VM* vm);
