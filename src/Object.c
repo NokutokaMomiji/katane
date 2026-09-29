@@ -18,43 +18,6 @@ typedef struct {
     int count;
 } VisitedSet;
 
-static KTN_MAYBE_UNUSED const char* KTN_WellKnownNameText[KTN_NAME_COUNT] = {
-    "init",
-    "toString",
-    "equals",
-    "hashCode",
-    "compare",
-    "dispose",
-    "suppressedErrors",
-    "message",
-    "stackTrace",
-    "expected",
-    "actual",
-    "value",
-    "values",
-    "name",
-    "ordinal",
-    "minimum",
-    "maximum",
-    "argumentName",
-    "operation",
-    "target",
-    "propertyName",
-    "key",
-    "index",
-    "moduleName",
-    "iterator",
-    "moveNext",
-    "current",
-    "keys",
-    "entries",
-    "chars",
-    "bytes",
-    "runes",
-    "next",
-    "done"
-};
-
 static bool VisitedContains(VisitedSet* vs, KTN_Object* obj) {
     for (int i = 0; i < vs->count; i++)
         if (vs->items[i] == obj)
@@ -548,20 +511,23 @@ KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString
 
             destinationParameter->name = STRING_COPY(vm, specParameter->start, specParameter->length);
             destinationParameter->type = specParameter->type;
-            destinationParameter->hasDefaultValue = specParameter->hasDefaultValue;
-            destinationParameter->isNamed = specParameter->isNamed;
             destinationParameter->kind = specParameter->kind;
             destinationParameter->defaultValue = specParameter->defaultValue;
             destinationParameter->defaultIsImmutable = specParameter->defaultIsImmutable;
             
             if (destinationParameter->kind != KTN_PARAM_POSITIONAL) {
-                signature->hasVariadic |= (destinationParameter->kind == KTN_PARAM_NAMED);
+                signature->hasVariadic |= (destinationParameter->kind == KTN_PARAM_VARIADIC);
                 continue;
             }
 
             signature->positionalCount++;
         }
 
+        /*
+            Cases:
+                1. shiki func(a, b, {c}) -> 0: a, 1: b, 2: c -> 2 == positionalCount (2)
+                2. shiki func(a, b, ...c, {d}) -> 0: a, 1: n, 2: ...c, 3: d -> 3 == positionalCount (2) + 1
+        */
         signature->namedStart = (signature->hasVariadic) ? signature->positionalCount + 1 : signature->positionalCount;
     }
 

@@ -176,6 +176,23 @@ static int InvokeInstructionLong(const char* name, KTN_Chunk* chunk, int offset)
     return offset + 6;
 }
 
+static int InvokeInstructionLongShort(const char* name, KTN_Chunk* chunk, int offset) {
+    uint32_t constant = (uint32_t)(chunk->code[offset + 1] << 24);
+    constant |= (uint32_t)(chunk->code[offset + 2] << 16);
+    constant |= (uint32_t)(chunk->code[offset + 3] << 8);
+    constant |= (uint32_t)(chunk->code[offset + 4]);
+
+    uint8_t positionalCount = chunk->code[offset + 5];
+    uint8_t namedCount = chunk->code[offset + 6];
+
+    printf("%-16s (%d positional, %d named) %4d '", name, positionalCount, namedCount, constant);
+    ObjectRepr(chunk->constants.values[constant], true);
+    printf("'\n");
+
+    return offset + 6;
+}
+
+
 static int TypedLocalInstruction(const char* name, KTN_Chunk* chunk, int offset) {
     uint8_t slot = chunk->code[offset + 1];
     uint32_t descriptor = (uint32_t)(chunk->code[offset + 2] << 24)
@@ -324,6 +341,8 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
             return JumpInstruction("OP_LOOP", -1, chunk, offset);
         case OP_CALL:
             return ByteInstruction("OP_CALL", chunk, offset);
+        case OP_CALL_EX:
+            return ShortInstruction("OP_CALL_EX", chunk, offset);
         case OP_ARRAY:
             return ShortInstruction("OP_ARRAY", chunk, offset);
         case OP_MAP:
@@ -332,6 +351,8 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
             return ConstantLongInstruction("OP_CLASS", chunk, offset);
         case OP_INVOKE:
             return InvokeInstructionLong("OP_INVOKE", chunk, offset);
+        case OP_INVOKE_EX:
+            return InvokeInstructionLongShort("OP_INVOKE_EX", chunk, offset);
         case OP_INHERIT:
             return SimpleInstruction("OP_INHERIT", offset);
         case OP_METHOD: {

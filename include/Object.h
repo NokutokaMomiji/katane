@@ -203,8 +203,6 @@ typedef struct {
     const char* start;
     int length;
     KTN_ObjTypeDescriptor* type;
-    bool hasDefaultValue;
-    bool isNamed;
     KTN_ParameterKind kind;
     KTN_Value defaultValue;
     bool defaultIsImmutable;
@@ -215,8 +213,6 @@ typedef struct {
 typedef struct {
     KTN_ObjString* name;
     KTN_ObjTypeDescriptor* type;
-    bool hasDefaultValue;
-    bool isNamed;
     KTN_ParameterKind kind;
     KTN_Value defaultValue;
     bool defaultIsImmutable;

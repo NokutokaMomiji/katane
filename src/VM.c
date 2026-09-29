@@ -1,8 +1,8 @@
+#include "Chunk.h"
 #include "HashMap.h"
 #include "Table.h"
 #include "TypeDescriptor.h"
 #include "Value.h"
-#include <ctype.h>
 #include <stdbool.h>
 #include <stdint.h>
 #define _GNU_SOURCE
@@ -989,6 +989,81 @@ static bool Call(KTN_VM* vm, KTN_ObjClosure* closure, int argumentCount, KTN_Obj
 #ifdef DEBUG_PRINT_CODE
     PrintCallFrame(vm, frame);
 #endif
+    return true;
+}
+
+static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int namedCount) {
+    KTN_ObjSignature* signature = NULL;
+
+    // Theoretically, attempting to call a non-object will cause CallValue or Invoke to fail.
+    // We don't have to "re-handle" it. 
+    if (!IS_OBJECT(callee)) return true;
+
+    switch (OBJECT_TYPE(callee)) {
+        case OBJ_CLASS: {
+            KTN_ObjKata* kata = AS_CLASS(callee);
+            if (IS_CLOSURE(kata->constructor)) {
+                signature = AS_CLOSURE(kata->constructor)->function->signature;
+            } else if (IS_NATIVE(kata->constructor)) {
+                // TODO: Create signature.
+                signature = NULL;
+                KTN_VMPanic(vm, "Unimplemented: CallValidate, case OBJ_CLASS, IS_NATIVE(kata->constructor)");
+            } else {
+                // Implicit constructor. Takes no parameters. CallValue will handle it.
+                return true;
+            }
+            break;
+        }
+        case OBJ_NATIVE: {
+            KTN_VMPanic(vm, "Unimplemented: CallValidate, case OBJ_NATIVE");
+        }
+        case OBJ_CLOSURE: {
+            signature = AS_CLOSURE(callee)->function->signature;
+        }
+        case OBJ_BOUND_METHOD: {
+            signature = AS_BOUND_METHOD(callee)->method->function->signature;
+        }
+        default: return true;
+    }
+
+    if (signature == NULL) {
+        // I mean, invariant: All callable objects are functions, thus they have a signature.
+        KTN_VMPanic(vm, "Callable object has no valid signature");
+    }
+
+    // If we have no variadics, and there are more positional arguments than in the signature-
+    // That's an error.
+    if (!signature->hasVariadic && positionalCount > signature->positionalCount) {
+        KTN_ThrowException(vm, "ArgumentError", false, "Expected %d positional parameters, got %d.", signature->positionalCount, positionalCount);
+        return false;
+    }
+
+    int argumentCount = positionalCount + namedCount;
+
+    KTN_Value tempStack[UINT8_MAX];
+    int tempStackTop = 0;
+    KTN_ObjArray* variadicArray = NULL;
+
+    int positionalMin = min(positionalCount, signature->positionalCount);
+
+    for (int i = 0; i < signature->positionalCount; i++) {
+        KTN_SignatureParameter* parameter = &signature->parameters[i];
+
+        if (i < positionalCount) {
+            tempStack[tempStackTop++] = Peek(vm, argumentCount - i + 1);
+            continue;
+        }
+
+        KTN_Value defaultValue = parameter->defaultValue;
+        if (defaultValue == EMPTY_VALUE) {
+            KTN_ThrowException(vm, "ArgumentError", false, "Expected %d positional parameters, got %d.", signature->positionalCount, positionalCount);
+            return false;
+        }
+
+        tempStack[tempStackTop++] = defaultValue;
+    }
+
+
     return true;
 }
 
@@ -2844,6 +2919,31 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             }
             case OP_CALL: {
                 int argumentCount = READ_BYTE();
+
+                if (!CallValidate(vm, Peek(vm, argumentCount), argumentCount, 0)) {
+                    break;
+                }
+
+                if (!CallValue(vm, Peek(vm, argumentCount), argumentCount)) {
+                    if (vm->caughtException) {
+                        vm->caughtException = false;
+                        vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                        break;
+                    }
+                    return RUNTIME_ERROR(NULL_VALUE);
+                }
+                vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                break;
+            }
+            case OP_CALL_EX: {
+                int positionalCount = READ_BYTE();
+                int namedCount = READ_BYTE();
+                int argumentCount = positionalCount + (namedCount * 2);
+
+                if (!CallValidate(vm, Peek(vm, argumentCount), positionalCount, namedCount * 2)) {
+                    break;
+                }
+
                 if (!CallValue(vm, Peek(vm, argumentCount), argumentCount)) {
                     if (vm->caughtException) {
                         vm->caughtException = false;
@@ -2858,6 +2958,32 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             case OP_INVOKE: {
                 KTN_ObjString* method = READ_STRING();
                 int argumentCount = READ_BYTE();
+
+                if (!CallValidate(vm, Peek(vm, argumentCount), argumentCount, 0)) {
+                    break;
+                }
+
+                if (!Invoke(vm, method, argumentCount)) {
+                    if (vm->caughtException) {
+                        vm->caughtException = false;
+                        vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                        break;
+                    }
+                    return RUNTIME_ERROR(NULL_VALUE);
+                }
+
+                vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                break;
+            }
+            case OP_INVOKE_EX: {
+                KTN_ObjString* method = READ_STRING();
+                int positionalCount = READ_BYTE();
+                int namedCount = READ_BYTE();
+                int argumentCount = positionalCount + (namedCount * 2);
+
+                if (!CallValidate(vm, Peek(vm, argumentCount), positionalCount, namedCount * 2)) {
+                    break;
+                }
 
                 if (!Invoke(vm, method, argumentCount)) {
                     if (vm->caughtException) {
