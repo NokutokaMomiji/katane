@@ -1031,6 +1031,15 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
         KTN_VMPanic(vm, "Callable object has no valid signature");
     }
 
+    if (!signature->hasVariadic && positionalCount == signature->positionalCount && signature->namedStart == signature->parameterCount) {
+        if (namedCount != 0) {
+            KTN_ThrowException(vm, "ArgumentError", false, "Expected 0 named parameters, got %d.", namedCount);
+            return false;
+        }
+
+        return true;
+    }
+
     // If we have no variadics, and there are more positional arguments than in the signature-
     // That's an error.
     if (!signature->hasVariadic && positionalCount > signature->positionalCount) {
@@ -1038,19 +1047,24 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
         return false;
     }
 
+    if (signature->namedStart == signature->parameterCount && namedCount != 0) {
+        KTN_ThrowException(vm, "ArgumentError", false, "Expected 0 named parameters, got %d.", namedCount);
+        return false;
+    }
+
     int argumentCount = positionalCount + namedCount;
 
     KTN_Value tempStack[UINT8_MAX];
     int tempStackTop = 0;
-    KTN_ObjArray* variadicArray = NULL;
-
     int positionalMin = min(positionalCount, signature->positionalCount);
 
-    for (int i = 0; i < signature->positionalCount; i++) {
+    int i;
+
+    for (i = 0; i < signature->positionalCount; i++) {
         KTN_SignatureParameter* parameter = &signature->parameters[i];
 
         if (i < positionalCount) {
-            tempStack[tempStackTop++] = Peek(vm, argumentCount - i + 1);
+            tempStack[tempStackTop++] = Peek(vm, argumentCount - 1 - i);
             continue;
         }
 
@@ -1063,6 +1077,31 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
         tempStack[tempStackTop++] = defaultValue;
     }
 
+    if (i < positionalCount) {
+        KTN_ObjArray* variadicArray = ArrayNew(vm);
+        while (i < positionalCount) {
+            KTN_ArrayAdd(vm, variadicArray, Peek(vm, argumentCount - 1 - i));
+            i++;
+        }
+
+        tempStack[tempStackTop++] = OBJECT_VALUE(variadicArray);
+    } 
+
+    for (i = signature->namedStart; i < signature->parameterCount; i++) {
+        bool foundParam = false;
+        for (int n = 0; n < namedCount; n += 2) {
+            KTN_ObjString* name = AS_STRING(Peek(vm, positionalCount - 1 - n));
+            KTN_Value value = Peek(vm, positionalCount - n);
+
+            KTN_SignatureParameter* parameter = &signature->parameters[i];
+            
+            if (parameter->name == name) {
+                tempStack[tempStackTop++] = value;
+                foundParam = true;
+                break;
+            }
+        }
+    }
 
     return true;
 }
