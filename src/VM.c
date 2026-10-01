@@ -5,6 +5,7 @@
 #include "Value.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include <xkeycheck.h>
 #define _GNU_SOURCE
 #include <stdarg.h>
 #include <stdio.h>
@@ -1016,12 +1017,15 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
         }
         case OBJ_NATIVE: {
             KTN_VMPanic(vm, "Unimplemented: CallValidate, case OBJ_NATIVE");
+            break;
         }
         case OBJ_CLOSURE: {
             signature = AS_CLOSURE(callee)->function->signature;
+            break;
         }
         case OBJ_BOUND_METHOD: {
             signature = AS_BOUND_METHOD(callee)->method->function->signature;
+            break;
         }
         default: return true;
     }
@@ -1031,77 +1035,133 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
         KTN_VMPanic(vm, "Callable object has no valid signature");
     }
 
-    if (!signature->hasVariadic && positionalCount == signature->positionalCount && signature->namedStart == signature->parameterCount) {
-        if (namedCount != 0) {
-            KTN_ThrowException(vm, "ArgumentError", false, "Expected 0 named parameters, got %d.", namedCount);
-            return false;
-        }
-
+    KTN_SignatureParameter* parameters = signature->parameters;
+    int numOfPositional = signature->positionalCount;
+    int numOfNamed = signature->parameterCount - signature->namedStart;
+    bool hasVariadic = signature->hasVariadic;
+    
+    // If the function is purely positional, all arguments are already in their correct stack slots.
+    if (namedCount == 0 && !hasVariadic && positionalCount == numOfPositional && numOfNamed == 0) {
         return true;
     }
 
-    // If we have no variadics, and there are more positional arguments than in the signature-
-    // That's an error.
-    if (!signature->hasVariadic && positionalCount > signature->positionalCount) {
-        KTN_ThrowException(vm, "ArgumentError", false, "Expected %d positional parameters, got %d.", signature->positionalCount, positionalCount);
+    // Since optional positional parameters go after required parameters, we can just trim them off.
+    int requiredPositionals = numOfPositional;
+    while (requiredPositionals > 0 && !IS_EMPTY(parameters[requiredPositionals - 1].defaultValue)) {
+        requiredPositionals--;
+    }
+
+    // i.e. shiki func(a, b, c = 3) -> func(1);
+    if (positionalCount < requiredPositionals) {
+        char* missingName = parameters[positionalCount].name->chars;
+        KTN_ThrowException(vm, "ArgumentError", false, "Missing required positional argument \"%s\".", missingName);
         return false;
     }
 
-    if (signature->namedStart == signature->parameterCount && namedCount != 0) {
-        KTN_ThrowException(vm, "ArgumentError", false, "Expected 0 named parameters, got %d.", namedCount);
+    // i.e. shiki func(a, b, c = 3) -> func(1, 2, 3, 4, 5);
+    if (positionalCount > numOfPositional && !hasVariadic) {
+        KTN_ThrowException(vm, "ArgumentError", false, "Expected %d positional arguments, got %d.", requiredPositionals, positionalCount);
         return false;
     }
 
-    int argumentCount = positionalCount + namedCount;
+    // i.e. shiki func(a, b, c = 3) -> func(1, 2, incorrect = true);
+    if (numOfNamed == 0 && namedCount > 0) {
+        KTN_ThrowException(vm, "ArgumentError", false, "Expected 0 named arguments, got %d.", namedCount);
+        return false;
+    }
 
     KTN_Value tempStack[UINT8_MAX];
-    int tempStackTop = 0;
-    int positionalMin = min(positionalCount, signature->positionalCount);
+    int stackTop = 0;
+    int argumentCount = positionalCount + namedCount;
 
-    int i;
-
-    for (i = 0; i < signature->positionalCount; i++) {
-        KTN_SignatureParameter* parameter = &signature->parameters[i];
+    for (int i = 0; i < numOfNamed; i++) {
+        KTN_SignatureParameter* parameter = &parameters[i];
 
         if (i < positionalCount) {
-            tempStack[tempStackTop++] = Peek(vm, argumentCount - 1 - i);
+            tempStack[stackTop++] = Peek(vm, argumentCount - 1 - i);
             continue;
         }
 
-        KTN_Value defaultValue = parameter->defaultValue;
-        if (defaultValue == EMPTY_VALUE) {
-            KTN_ThrowException(vm, "ArgumentError", false, "Expected %d positional parameters, got %d.", signature->positionalCount, positionalCount);
-            return false;
+        if (!IS_EMPTY(parameter->defaultValue)) {
+            // TODO: Copy array.
+            tempStack[stackTop++] = parameter->defaultValue;
+            continue;
         }
 
-        tempStack[tempStackTop++] = defaultValue;
+        KTN_ThrowException(vm, "ArgumentError", false, "Missing positional argument \"%s\".", parameter->name->chars);
+        return false;
     }
 
-    if (i < positionalCount) {
+    if (hasVariadic) {
         KTN_ObjArray* variadicArray = ArrayNew(vm);
-        while (i < positionalCount) {
-            KTN_ArrayAdd(vm, variadicArray, Peek(vm, argumentCount - 1 - i));
-            i++;
+        Push(vm, OBJECT_VALUE(variadicArray));
+
+        for (int i = numOfPositional; i < positionalCount; i++) {
+            KTN_ArrayAdd(vm, variadicArray, Peek(vm, argumentCount - i));
         }
 
-        tempStack[tempStackTop++] = OBJECT_VALUE(variadicArray);
-    } 
+        Pop(vm);
+        tempStack[stackTop++] = OBJECT_VALUE(variadicArray);
+    }
 
-    for (i = signature->namedStart; i < signature->parameterCount; i++) {
-        bool foundParam = false;
-        for (int n = 0; n < namedCount; n += 2) {
-            KTN_ObjString* name = AS_STRING(Peek(vm, positionalCount - 1 - n));
-            KTN_Value value = Peek(vm, positionalCount - n);
+    if (numOfNamed > 0) {
+        // We need to keep track of which arguments in the stack matched any parameters in the signature.
+        // If any are false, that means the user provided invalid arguments.
+        bool consumed[UINT8_MAX] = {false};
 
-            KTN_SignatureParameter* parameter = &signature->parameters[i];
-            
-            if (parameter->name == name) {
-                tempStack[tempStackTop++] = value;
-                foundParam = true;
-                break;
+        for (int i = signature->namedStart; i < signature->parameterCount; i++) {
+            KTN_SignatureParameter* parameter = &parameters[i];
+            bool found = false;
+
+            for (int n = 0; n < namedCount; n++) {
+                if (consumed[n])
+                    continue;
+
+                int base = 2 * (namedCount - 1 - n);
+                KTN_ObjString* argumentName = AS_STRING(Peek(vm, base + 1));
+
+                if (argumentName == parameter->name) {
+                    tempStack[stackTop++] = Peek(vm, base);
+                    consumed[n] = true;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                if (!IS_EMPTY(parameter->defaultValue)) {
+                    tempStack[stackTop++] = parameter->defaultValue;
+                    continue;
+                }
+
+                KTN_ThrowException(vm, "ArgumentError", false, "Missing required named argument: \"%s\".", parameter->name->chars);
+                return false;
             }
         }
+
+        for (int i = 0; i < namedCount; i++) {
+            if (consumed[i])
+                continue;
+
+            int base = 2 * (namedCount - 1 - i);
+            KTN_ObjString* argumentName = AS_STRING(Peek(vm, base + 1));
+            
+            KTN_ThrowException(vm, "ArgumentError", false, "Unexpected named argument: \"%s\".", argumentName->chars);
+            
+            return false;
+        }
     }
+
+    PopN(vm, argumentCount);
+    uintptr_t distance = vm->stackTop - vm->stack;
+
+    if (distance + stackTop >= STACK_MIN) {
+        KTN_VMPanic(vm, "[ERROR]: VM Value stack will overflow at CallValidate.");
+    }
+
+    memcpy(vm->stackTop, tempStack, (size_t)stackTop * sizeof(KTN_Value));
+
+    vm->stackTop += stackTop;
 
     return true;
 }
