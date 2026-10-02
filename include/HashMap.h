@@ -22,7 +22,7 @@ typedef struct {
 
 #define HASHMAP_MAX_LOAD 0.75
 
-void KTN_HashMapInit(KTN_HashMap* map);
+void KTN_HashMapInit(KTN_HashMap* map, size_t initialSize);
 void KTN_HashMapFree(KTN_VM* vm, KTN_HashMap* map);
 bool KTN_HashMapGet(KTN_VM* vm, KTN_HashMap* map, KTN_Value key, KTN_Value* output);
 bool KTN_HashMapSet(KTN_VM* vm, KTN_HashMap* map, KTN_Value key, KTN_Value value);

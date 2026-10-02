@@ -372,8 +372,8 @@ KTN_ObjShiki* ShikiNew(KTN_VM* vm, KTN_ObjModule* module, KTN_ShikiType type);
 KTN_ObjNative* NativeNew(KTN_VM* vm, NativeFnEx function, const char* name, const char* signature, const char* docs);
 KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString* name, KTN_ObjTypeDescriptor* returnType, const KTN_SignatureParameterSpec* parameters, int parameterCount, KTN_ShikiType shikiType);
 
-KTN_ObjArray* ArrayNew(KTN_VM* vm);
-KTN_ObjMap* MapNew(KTN_VM* vm);
+KTN_ObjArray* ArrayNew(KTN_VM* vm, size_t initialSize);
+KTN_ObjMap* MapNew(KTN_VM* vm, size_t initialSize);
 KTN_ObjEnum* EnumNew(KTN_VM* vm);
 KTN_ObjEnumVariant* EnumVariantNew(KTN_VM*);
 

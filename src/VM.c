@@ -5,7 +5,6 @@
 #include "Value.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include <xkeycheck.h>
 #define _GNU_SOURCE
 #include <stdarg.h>
 #include <stdio.h>
@@ -289,7 +288,7 @@ bool KTN_ThrowValue(KTN_VM* vm, KTN_ObjInstance* exception, bool buildTrace) {
                     KTN_Value suppressed;
 
                     if (!TableGet(&original->properties, KTN_NAME(vm, KTN_NAME_SUPPRESSED_ERRORS), &suppressed)) {
-                        KTN_ObjArray* array = ArrayNew(vm);
+                        KTN_ObjArray* array = ArrayNew(vm, 0);
                         suppressed = OBJECT_VALUE(array);
 
                         TableSet(vm, &original->properties, KTN_NAME(vm, KTN_NAME_SUPPRESSED_ERRORS), suppressed);
@@ -993,8 +992,10 @@ static bool Call(KTN_VM* vm, KTN_ObjClosure* closure, int argumentCount, KTN_Obj
     return true;
 }
 
-static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int namedCount) {
+static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int namedCount, int* finalCount) {
     KTN_ObjSignature* signature = NULL;
+
+    *finalCount = positionalCount + namedCount * 2;
 
     // Theoretically, attempting to call a non-object will cause CallValue or Invoke to fail.
     // We don't have to "re-handle" it. 
@@ -1093,7 +1094,7 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
     }
 
     if (hasVariadic) {
-        KTN_ObjArray* variadicArray = ArrayNew(vm);
+        KTN_ObjArray* variadicArray = ArrayNew(vm, positionalCount - numOfPositional);
         Push(vm, OBJECT_VALUE(variadicArray));
 
         for (int i = numOfPositional; i < positionalCount; i++) {
@@ -1162,6 +1163,8 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
     memcpy(vm->stackTop, tempStack, (size_t)stackTop * sizeof(KTN_Value));
 
     vm->stackTop += stackTop;
+
+    *finalCount = stackTop;
 
     return true;
 }
@@ -3018,12 +3021,13 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             }
             case OP_CALL: {
                 int argumentCount = READ_BYTE();
+                int finalCount = 0;
 
-                if (!CallValidate(vm, Peek(vm, argumentCount), argumentCount, 0)) {
+                if (!CallValidate(vm, Peek(vm, argumentCount), argumentCount, 0, &finalCount)) {
                     break;
                 }
 
-                if (!CallValue(vm, Peek(vm, argumentCount), argumentCount)) {
+                if (!CallValue(vm, Peek(vm, finalCount), finalCount)) {
                     if (vm->caughtException) {
                         vm->caughtException = false;
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3038,12 +3042,13 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 int positionalCount = READ_BYTE();
                 int namedCount = READ_BYTE();
                 int argumentCount = positionalCount + (namedCount * 2);
+                int finalCount = 0;
 
-                if (!CallValidate(vm, Peek(vm, argumentCount), positionalCount, namedCount * 2)) {
+                if (!CallValidate(vm, Peek(vm, argumentCount), positionalCount, namedCount, &finalCount)) {
                     break;
                 }
 
-                if (!CallValue(vm, Peek(vm, argumentCount), argumentCount)) {
+                if (!CallValue(vm, Peek(vm, finalCount), finalCount)) {
                     if (vm->caughtException) {
                         vm->caughtException = false;
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3057,12 +3062,13 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             case OP_INVOKE: {
                 KTN_ObjString* method = READ_STRING();
                 int argumentCount = READ_BYTE();
+                int finalCount = 0;
 
-                if (!CallValidate(vm, Peek(vm, argumentCount), argumentCount, 0)) {
+                if (!CallValidate(vm, Peek(vm, argumentCount), argumentCount, 0, &finalCount)) {
                     break;
                 }
 
-                if (!Invoke(vm, method, argumentCount)) {
+                if (!Invoke(vm, method, finalCount)) {
                     if (vm->caughtException) {
                         vm->caughtException = false;
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3079,12 +3085,13 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 int positionalCount = READ_BYTE();
                 int namedCount = READ_BYTE();
                 int argumentCount = positionalCount + (namedCount * 2);
+                int finalCount = 0;
 
-                if (!CallValidate(vm, Peek(vm, argumentCount), positionalCount, namedCount * 2)) {
+                if (!CallValidate(vm, Peek(vm, argumentCount), positionalCount, namedCount, &finalCount)) {
                     break;
                 }
 
-                if (!Invoke(vm, method, argumentCount)) {
+                if (!Invoke(vm, method, finalCount)) {
                     if (vm->caughtException) {
                         vm->caughtException = false;
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3139,7 +3146,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             }
             case OP_ARRAY: {
                 int numOfItems = READ_SHORT();
-                KTN_ObjArray* array = ArrayNew(vm);
+                KTN_ObjArray* array = ArrayNew(vm, numOfItems);
 
                 // We jump over all of the item values and move to the NULL placeholder value.
                 vm->stackTop[-numOfItems - 1] = OBJECT_VALUE(array);
@@ -3155,7 +3162,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 int numOfPairs = READ_SHORT();
                 int numOfItems = numOfPairs * 2;
 
-                KTN_ObjMap* map = MapNew(vm);
+                KTN_ObjMap* map = MapNew(vm, numOfPairs);
 
                 vm->stackTop[-numOfItems - 1] = OBJECT_VALUE(map);
 
@@ -3589,7 +3596,7 @@ void registerRoot(KTN_VM* vm) {
 
 void registerStdArgs(KTN_VM* vm) {
     Push(vm, OBJECT_VALUE(STRING_COPY_AUTO("ktnArgs")));
-    Push(vm, OBJECT_VALUE(ArrayNew(vm)));
+    Push(vm, OBJECT_VALUE(ArrayNew(vm, vm->stdArgsCount)));
 
     KTN_ObjArray* array = AS_ARRAY(Peek(vm, 0));
 

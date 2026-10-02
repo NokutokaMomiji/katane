@@ -1,8 +1,5 @@
-#include <stdio.h>
 #include "Map.h"
-#include "Table.h"
 #include "VM.h"
-#include "Utilities.h"
 
 bool MapGet(KTN_ObjMap* map, KTN_Value key, KTN_Value* value) { return true; }
 
@@ -11,7 +8,7 @@ bool MapSet(KTN_VM* vm, KTN_ObjMap* map, KTN_Value key, KTN_Value value) {
 }
 
 bool MapGetKeys(KTN_VM* vm, KTN_ObjMap* map, KTN_Value* value) {
-    KTN_ObjArray* array = ArrayNew(vm);
+    KTN_ObjArray* array = ArrayNew(vm, map->map.count);
     Push(vm, OBJECT_VALUE(array));
 
     int index = map->map.orderHead;
@@ -29,7 +26,7 @@ bool MapGetKeys(KTN_VM* vm, KTN_ObjMap* map, KTN_Value* value) {
 }
 
 bool MapGetValues(KTN_VM* vm, KTN_ObjMap* map, KTN_Value* value) {
-    KTN_ObjArray* array = ArrayNew(vm);
+    KTN_ObjArray* array = ArrayNew(vm, map->map.count);
     Push(vm, OBJECT_VALUE(array));
 
     int index = map->map.orderHead;

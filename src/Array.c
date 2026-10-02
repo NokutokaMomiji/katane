@@ -1,8 +1,5 @@
-#include <stdio.h>
-
 #include "Array.h"
 #include "VM.h"
-#include "Utilities.h"
 
 inline void KTN_ArrayAdd(KTN_VM* vm, KTN_ObjArray* array, KTN_Value value) {
     Push(vm, value);
@@ -88,7 +85,7 @@ bool KTN_ArrayGetRange(KTN_VM* vm, KTN_ObjArray* array, KTN_Value min, KTN_Value
         rangeMax = tmp - 1;
     }
 
-    KTN_ObjArray* newArray = ArrayNew(vm);
+    KTN_ObjArray* newArray = ArrayNew(vm, (rangeMax - rangeMin) / 10);
 
     if (Step > 0) {
         for (int i = rangeMin; i < rangeMax; i += Step)

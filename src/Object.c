@@ -628,16 +628,16 @@ KTN_ObjUpvalue* UpvalueNew(KTN_VM* vm, KTN_Value* slot) {
     return Upvalue;
 }
 
-KTN_ObjArray* ArrayNew(KTN_VM* vm) {
+KTN_ObjArray* ArrayNew(KTN_VM* vm, size_t initialSize) {
     KTN_ObjArray* array = ALLOCATE_OBJ(KTN_ObjArray, OBJ_ARRAY);
-    ValueArrayInit(&array->items);
+    ValueArrayInit(&array->items, initialSize);
     return array;
 }
 
-KTN_ObjMap* MapNew(KTN_VM* vm) {
+KTN_ObjMap* MapNew(KTN_VM* vm, size_t initialSize) {
     KTN_ObjMap* map = ALLOCATE_OBJ(KTN_ObjMap, OBJ_MAP);
 
-    KTN_HashMapInit(&map->map);
+    KTN_HashMapInit(&map->map, initialSize);
 
     return map;
 }
@@ -671,7 +671,7 @@ KTN_ObjKata* KataNew(KTN_VM* vm, KTN_ObjString* name) {
     KTN_ObjKata* kata = ALLOCATE_OBJ(KTN_ObjKata, OBJ_CLASS);
     kata->className = name;
 
-    ValueArrayInit(&kata->methodNames);
+    ValueArrayInit(&kata->methodNames, 0);
 
     TableInit(&kata->methods);
     TableInit(&kata->properties);
@@ -707,7 +707,7 @@ KTN_ObjKata* KataNew(KTN_VM* vm, KTN_ObjString* name) {
 KTN_ObjInstance* InstanceNew(KTN_VM* vm, KTN_ObjKata* classObj) {
     KTN_ObjInstance* instance = ALLOCATE_OBJ(KTN_ObjInstance, OBJ_INSTANCE);
     instance->kata = classObj;
-    ValueArrayInit(&instance->propertyNames);
+    ValueArrayInit(&instance->propertyNames, 0);
     TableInit(&instance->properties);
     instance->typeArguments = NULL;
     TableAddAll(vm, &classObj->properties, &instance->properties);

@@ -17,7 +17,7 @@ void KTN_ChunkInit(KTN_Chunk* chunk) {
     chunk->lines = NULL;
 
     //Initialize internal constant array.
-    ValueArrayInit(&chunk->constants);
+    ValueArrayInit(&chunk->constants, 0);
 }
 
 /// @brief Writes a byte to a Chunk array.

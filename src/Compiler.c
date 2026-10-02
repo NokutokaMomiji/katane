@@ -708,7 +708,7 @@ static bool EvaluateCompiledExpression(KTN_Value* value) {
         case TOKEN_SQUARE_OPEN: {
             CompilerAdvance();
 
-            KTN_ObjArray* array = ArrayNew(parser.vm);
+            KTN_ObjArray* array = ArrayNew(parser.vm, 0);
             Push(parser.vm, OBJECT_VALUE(array));
 
             if (Match(TOKEN_SQUARE_CLOSE)) {
@@ -745,7 +745,7 @@ static bool EvaluateCompiledExpression(KTN_Value* value) {
         case TOKEN_BRACKET_OPEN: {
             CompilerAdvance();
 
-            KTN_ObjMap* map = MapNew(parser.vm);
+            KTN_ObjMap* map = MapNew(parser.vm, 0);
             Push(parser.vm, OBJECT_VALUE(map));
 
             if (Match(TOKEN_BRACKET_CLOSE)) {
@@ -920,6 +920,13 @@ static uint16_t ArgumentList() {
             } else if (Match(TOKEN_BRACKET_CLOSE)) {
                 inNamedBlock = false;
                 break;
+            }
+
+            if (inNamedBlock) {
+                CompilerConsume(TOKEN_IDENTIFIER, "Expected argument name in named block");
+                uint32_t nameConstant = IdentifierConstant(&parser.previous);
+                CompilerEmitByteLong(OP_CONSTANT_LONG, nameConstant);
+                CompilerConsume(TOKEN_COLON, "Expected ':' after argument name");
             }
 
             CompilerExpression();

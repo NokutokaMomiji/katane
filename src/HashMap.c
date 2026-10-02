@@ -10,12 +10,17 @@
 */
 
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "HashMap.h"
 #include "Memory.h"
 #include "Object.h"
+#include "Table.h"
+#include "Utilities.h"
+#include "VM.h"
 #include "Value.h"
 
 #define IDEAL(hash, capacity)       ((hash) & (uint32_t)((capacity) - 1))
@@ -65,6 +70,51 @@ static uint32_t HashDouble(double number) {
 static uint32_t HashPointer(const void* pointer) {
     uintptr_t address = (uintptr_t)pointer;
     return (uint32_t)((address * GOLDEN_RATIO) >> 32);
+}
+
+static uint32_t HashMapDispatchHashCode(KTN_VM* vm, KTN_ObjInstance* instance) {
+    KTN_ObjKata* kata = instance->kata;
+    KTN_Value hashCodeGetter;
+
+    if (!TableGet(&kata->methods, KTN_GetWellKnownName(vm, KTN_NAME_HASH_CODE), &hashCodeGetter)) {
+        return HashPointer(instance);
+
+        KTN_ThrowException(vm, "PropertyError", false, "\"%s\" object has no getter \"hashCode\".");
+        return 0;
+    }
+    
+    if (!IS_ACCESSOR(hashCodeGetter)) {
+        return HashPointer(instance);
+
+        KTN_ThrowException(vm, "PropertyError", false, "\"%s\" object has no getter \"hashCode\".");
+        return 0;
+    }
+
+    KTN_ObjAccessor* accessor = AS_ACCESSOR(hashCodeGetter);
+
+    if (IS_EMPTY(accessor->getter)) {
+        return HashPointer(instance);
+
+        KTN_ThrowException(vm, "PropertyError", false, "\"%s\" object has no getter \"hashCode\".");
+        return 0;
+    }
+
+    Push(vm, OBJECT_VALUE(instance));
+
+    KTN_CallStatus result = KTN_CallAndRun(vm, accessor->getter, 0);
+
+    if (result != KTN_CALL_OK) {
+        return 0;
+    }
+
+    KTN_Value hashResult = Pop(vm);
+
+    if (!IS_INT(hashResult)) {
+        KTN_ThrowException(vm, "TypeError", false, "Expected integer for hash.");
+        return 0;
+    }
+
+    return HashInt32((int32_t)AS_INT(hashResult)); 
 }
 
 static void Grow(KTN_VM* vm, KTN_HashMap* map) {
@@ -183,22 +233,23 @@ static inline bool KeysEqual(KTN_Value a, KTN_Value b) {
 #endif
 }
 
-void KTN_HashMapInit(KTN_HashMap* map) {
+void KTN_HashMapInit(KTN_HashMap* map, size_t initialSize) {
     map->count = 0;
-    map->capacity = 0;
+    map->capacity = (initialSize == 0) ? 0 : PowerOf2Ceil(initialSize);
     map->orderHead = -1;
     map->orderTail = -1;
-    map->entries = NULL;
+    map->entries = (initialSize == 0) ? NULL : (KTN_HashEntry*)malloc(sizeof(KTN_HashEntry) * map->capacity);
+
+    if (map->entries == NULL)
+        map->capacity = 0;
 }
 
 void KTN_HashMapFree(KTN_VM* vm, KTN_HashMap* map) {
     FREE_ARRAY(KTN_HashEntry, map->entries, map->capacity);
-    KTN_HashMapInit(map);
+    KTN_HashMapInit(map, 0);
 }
 
 uint32_t HashValue(KTN_VM* vm, KTN_Value value) {
-    (void)vm; // TODO: implement instance->hashCode dispatch...
-
     if (IS_INT(value))      return HashInt32(AS_INT(value));
     if (IS_DOUBLE(value))   return HashDouble(AS_DOUBLE(value));
     if (IS_BOOL(value))     return AS_BOOL(value) ? 1231u : 1237u;
@@ -216,7 +267,7 @@ uint32_t HashValue(KTN_VM* vm, KTN_Value value) {
         }
 
         if (object->type == OBJ_INSTANCE) {
-            //return HashMapDispatchHashCode(vm, value);
+            return HashMapDispatchHashCode(vm, AS_INSTANCE(value));
         }
 
         return HashPointer(object);

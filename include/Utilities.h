@@ -49,6 +49,17 @@ void SBFree(StringBuilder* sb);
 
 char* ProcessEscapes(const char* source, int sourceLength, int* outLength);
 
+// Thanks Wren (for letting me know it exists) and Stanford (for hosting the student's crazy methodologies)
+static inline int PowerOf2Ceil(int n) {
+    n--;
+    n |= n >> 1;
+    n |= n >> 2;
+    n |= n >> 4;
+    n |= n >> 8;
+    n |= n >> 16;
+    return n + 1;
+}
+
 #if defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64)
 #include <stdarg.h>
 #ifdef __cplusplus

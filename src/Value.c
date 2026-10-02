@@ -1,15 +1,20 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "Memory.h"
 #include "Value.h"
 #include "Object.h"
+#include "Utilities.h"
 
-void ValueArrayInit(KTN_ValueArray* array) {
+void ValueArrayInit(KTN_ValueArray* array, size_t initialSize) {
     //Intialize an empty array.
-    array->values = NULL;
-    array->capacity = 0;
+    array->capacity = (initialSize == 0) ? 0 : PowerOf2Ceil(initialSize);
     array->count = 0;
+    array->values = (initialSize == 0) ? NULL : (KTN_Value*)malloc(sizeof(KTN_Value) * array->capacity);
+
+    if (array->values == NULL)
+        array->capacity = 0;
 }
 
 void ValueArrayWrite(KTN_VM* vm, KTN_ValueArray* array, KTN_Value value) {
@@ -37,7 +42,7 @@ void ValueArrayFree(KTN_VM* vm, KTN_ValueArray* array) {
     FREE_ARRAY(KTN_Value, array->values, array->capacity);
 
     //Reintialize array.
-    ValueArrayInit(array);
+    ValueArrayInit(array, 0);
 }
 
 void ValuePrint(KTN_Value value) {

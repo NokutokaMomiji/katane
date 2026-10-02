@@ -40,7 +40,7 @@ const char* KTN_ValueTypeName(KTN_Value value) {
 }
 
 KTN_Value BuildStackTraceObject(KTN_VM* vm, KTN_ObjInstance* stackTraceInstance) {
-    KTN_ObjArray* frames = ArrayNew(vm);
+    KTN_ObjArray* frames = ArrayNew(vm, vm->frameCount);
     Push(vm, OBJECT_VALUE(frames));
 
     for (int frameIndex = vm->frameCount - 1; frameIndex >= 0; frameIndex--) {
@@ -51,7 +51,7 @@ KTN_Value BuildStackTraceObject(KTN_VM* vm, KTN_ObjInstance* stackTraceInstance)
         int line = KTN_ChunkGetLine(&function->chunk, (int)instruction);
         char* content = KTN_ChunkGetSource(&function->chunk, (int)instruction);
 
-        KTN_ObjMap* frameMap = MapNew(vm);
+        KTN_ObjMap* frameMap = MapNew(vm, 4);
         Push(vm, OBJECT_VALUE(frameMap));
 
         Push(vm, STRING_VALUE("line"));
