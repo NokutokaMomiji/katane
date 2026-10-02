@@ -968,11 +968,6 @@ inline KTN_ErrorFrame* ErrorPeek(KTN_VM* vm) {
 }
 
 static bool Call(KTN_VM* vm, KTN_ObjClosure* closure, int argumentCount, KTN_ObjKata* owner) {
-    if (argumentCount != closure->function->arity) {
-        if (!KATANE_RUNTIME_ERROR("Expected %d arguments but got %d instead.", COLOR_MAGENTA "Ara ara~" COLOR_RESET " I was craving " COLOR_CYAN "%d" COLOR_RESET " sweet arguments to spoil me with... but you only brought " COLOR_CYAN "%d" COLOR_RESET "? How disappointing, darling~ ♡", closure->function->arity, argumentCount)) return false;
-        return true;
-    }
-
     if (vm->frameCount == MAX_FRAMES) {
         if (!KATANE_RUNTIME_ERROR("Stack Overflow. Limit is %d.", COLOR_MAGENTA "Kyaa~" COLOR_RESET " My fluffy tail can only wrap around " COLOR_CYAN "%d" COLOR_RESET " frames... you're pushing me way too deep, naughty~! 🦊", MAX_FRAMES)) return false;
         return true;
@@ -1048,6 +1043,7 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
 
     // Since optional positional parameters go after required parameters, we can just trim them off.
     int requiredPositionals = numOfPositional;
+
     while (requiredPositionals > 0 && !IS_EMPTY(parameters[requiredPositionals - 1].defaultValue)) {
         requiredPositionals--;
     }
@@ -1075,7 +1071,7 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
     int stackTop = 0;
     int argumentCount = positionalCount + namedCount;
 
-    for (int i = 0; i < numOfNamed; i++) {
+    for (int i = 0; i < numOfPositional; i++) {
         KTN_SignatureParameter* parameter = &parameters[i];
 
         if (i < positionalCount) {
@@ -3047,6 +3043,20 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 if (!CallValidate(vm, Peek(vm, argumentCount), positionalCount, namedCount, &finalCount)) {
                     break;
                 }
+
+                printf("finalCount: %d\n", finalCount);
+                ValuePrint(Peek(vm, finalCount));
+                printf("\n");
+
+                printf("          ");
+                printf("( ");
+                for (KTN_Value* slot = vm->stack; slot < vm->stackTop; slot++) {
+                    printf("[");
+                    ObjectRepr(*slot, true);
+                    printf(" ]");
+                }
+                printf(" )");
+                printf("\n");
 
                 if (!CallValue(vm, Peek(vm, finalCount), finalCount)) {
                     if (vm->caughtException) {

@@ -235,13 +235,27 @@ static inline bool KeysEqual(KTN_Value a, KTN_Value b) {
 
 void KTN_HashMapInit(KTN_HashMap* map, size_t initialSize) {
     map->count = 0;
-    map->capacity = (initialSize == 0) ? 0 : PowerOf2Ceil(initialSize);
+    map->capacity = 0;
     map->orderHead = -1;
     map->orderTail = -1;
-    map->entries = (initialSize == 0) ? NULL : (KTN_HashEntry*)malloc(sizeof(KTN_HashEntry) * map->capacity);
+    map->entries = NULL;
 
-    if (map->entries == NULL)
-        map->capacity = 0;
+    if (initialSize != 0) {
+        int newCapacity = PowerOf2Ceil(initialSize);
+        KTN_HashEntry* newEntries = (KTN_HashEntry*)malloc(sizeof(KTN_HashEntry) * newCapacity);
+
+        if (newEntries == NULL) return;
+
+        for (int i = 0; i < newCapacity; i++) {
+            newEntries[i].key = EMPTY_VALUE;
+            newEntries[i].psl = 0;
+            newEntries[i].orderPrevious = -1;
+            newEntries[i].orderNext = -1;
+        }
+
+        map->capacity = newCapacity;
+        map->entries = newEntries;
+    }
 }
 
 void KTN_HashMapFree(KTN_VM* vm, KTN_HashMap* map) {

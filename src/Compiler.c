@@ -1,4 +1,5 @@
 #include <limits.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -912,14 +913,21 @@ static uint16_t ArgumentList() {
 
     if (!Check(TOKEN_PARENTHESIS_CLOSE)) {
         do {
-            if (Match(TOKEN_BRACKET_OPEN)) {
-                if (inNamedBlock) {
-                    ErrorAtCurrent("Unexpected '{' at shiki call");
-                }
-                inNamedBlock = true;
-            } else if (Match(TOKEN_BRACKET_CLOSE)) {
-                inNamedBlock = false;
-                break;
+            if (!inNamedBlock && Check(TOKEN_IDENTIFIER)) {
+                // Store state for lookahead.
+                KTN_ScannerPushState();
+                ParserSnapshot savedParser = ParserSaveState();
+
+                // Consume the identifier and check if it is succeeded by a colon ':'.
+                Match(TOKEN_IDENTIFIER);
+                inNamedBlock = Check(TOKEN_COLON);
+                
+                // Restore parser and scanner states.
+                ParserRestoreState(savedParser);
+                KTN_ScannerRestoreTopState();
+
+                // Remember to pop.
+                KTN_ScannerPopState();
             }
 
             if (inNamedBlock) {
@@ -944,13 +952,9 @@ static uint16_t ArgumentList() {
         } while (Match(TOKEN_COMMA));
     }
 
-    if (inNamedBlock) {
-        CompilerConsume(TOKEN_BRACKET_CLOSE, "Expected '}' at end of named argument block");
-    }
-
     CompilerConsume(TOKEN_PARENTHESIS_CLOSE, "Expected ')' after shiki call parameters");
     
-    return (((uint16_t)positionalCount) << 8) & (uint16_t)namedCount;
+    return (((uint16_t)positionalCount) << 8) | (uint16_t)namedCount;
 }
 
 static void CompilerAnd(bool canAssign) {
@@ -1463,7 +1467,7 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
                 ErrorAtCurrent("Cannot have more positional parameters after the variadic parameter");
             }
 
-            bool triDotCheck = Check(TOKEN_TRI_DOT);
+            bool triDotCheck = Match(TOKEN_TRI_DOT);
 
             if (triDotCheck) {
                 // Blocks: shiki func({...params});
