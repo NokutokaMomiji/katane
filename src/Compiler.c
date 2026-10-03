@@ -3440,10 +3440,14 @@ static void CompilerSuper(bool canAssign) {
         KTN_Token superToken = SyntheticToken("sokata");
         uint32_t superName = IdentifierConstant(&superToken);
         NamedVariable(SyntheticToken("this"), false);
-        uint8_t argumentCount = ArgumentList();
+        uint16_t argumentCount = ArgumentList();
+
+        uint8_t positionalCount = (argumentCount >> 8) & 0xFF;
+        uint8_t namedCount = argumentCount & 0xFF;
+
         NamedVariable(superToken, false);
         CompilerEmitByteLong(OP_SUPER_INVOKE, superName);
-        CompilerEmitByte(argumentCount);
+        CompilerEmitByte(positionalCount);
         return;
     }
 

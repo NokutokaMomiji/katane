@@ -189,7 +189,7 @@ static int InvokeInstructionLongShort(const char* name, KTN_Chunk* chunk, int of
     ObjectRepr(chunk->constants.values[constant], true);
     printf("'\n");
 
-    return offset + 6;
+    return offset + 7;
 }
 
 

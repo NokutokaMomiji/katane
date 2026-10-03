@@ -28,8 +28,6 @@
 #include "Tutorial.h"
 #include "VM.h"
 
-
-
 // Forward declarations for helpers defined later in this file.
 void registerModuleFile(KTN_VM* vm, KTN_ObjModule* module);
 void registerRoot(KTN_VM* vm);
@@ -1003,6 +1001,7 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
                 signature = AS_CLOSURE(kata->constructor)->function->signature;
             } else if (IS_NATIVE(kata->constructor)) {
                 // TODO: Create signature.
+                return true;
                 signature = NULL;
                 KTN_VMPanic(vm, "Unimplemented: CallValidate, case OBJ_CLASS, IS_NATIVE(kata->constructor)");
             } else {
@@ -1012,6 +1011,7 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
             break;
         }
         case OBJ_NATIVE: {
+            return true;
             KTN_VMPanic(vm, "Unimplemented: CallValidate, case OBJ_NATIVE");
             break;
         }
@@ -1023,7 +1023,10 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
             signature = AS_BOUND_METHOD(callee)->method->function->signature;
             break;
         }
-        default: return true;
+        default: {
+            printf("%d\n", OBJECT_TYPE(callee));
+            break;
+        }
     }
 
     if (signature == NULL) {
@@ -1061,7 +1064,7 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
         return false;
     }
 
-    // i.e. shiki func(a, b, c = 3) -> func(1, 2, incorrect = true);
+    // i.e. shiki func(a, b, c = 3) -> func(1, 2, incorrect: true);
     if (numOfNamed == 0 && namedCount > 0) {
         KTN_ThrowException(vm, "ArgumentError", false, "Expected 0 named arguments, got %d.", namedCount);
         return false;
@@ -1069,7 +1072,7 @@ static bool CallValidate(KTN_VM* vm, KTN_Value callee, int positionalCount, int 
 
     KTN_Value tempStack[UINT8_MAX];
     int stackTop = 0;
-    int argumentCount = positionalCount + namedCount;
+    int argumentCount = positionalCount + (namedCount * 2);
 
     for (int i = 0; i < numOfPositional; i++) {
         KTN_SignatureParameter* parameter = &parameters[i];
@@ -1235,10 +1238,19 @@ static bool CallValue(KTN_VM* vm, KTN_Value callee, int argumentCount) {
     return true;
 }
 
-static bool InvokeFromClass(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name, int argumentCount) {
+static bool InvokeFromClass(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name, int positionalCount, int namedCount) {
+    int argumentCount = positionalCount + (namedCount * 2);
+    
     if (strcmp(name->chars, kata->className->chars) == 0) {
-        if (IS_CLOSURE(kata->constructor))
-            return Call(vm, AS_CLOSURE(kata->constructor), argumentCount, kata);
+        if (IS_CLOSURE(kata->constructor)) {
+            int finalCount = 0;
+
+            if (!CallValidate(vm, kata->constructor, positionalCount, namedCount, &finalCount)) {
+                return false;
+            }
+            
+            return Call(vm, AS_CLOSURE(kata->constructor), finalCount, kata);
+        }
 
         if (!KTN_RuntimeError(vm, "Class \"%s\" has no constructor.", kata->className->chars))
             return false;
@@ -1291,11 +1303,18 @@ static bool InvokeFromClass(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name, 
         return true;
     }
 
+    int finalCount;
+    if (!CallValidate(vm, method, positionalCount, namedCount, &finalCount)) {
+        return false;
+    }
+
     KTN_ObjClosure* closure = AS_CLOSURE(method);
-    return Call(vm, closure, argumentCount, closure->owner);
+    return Call(vm, closure, finalCount, closure->owner);
 }
 
-static bool Invoke(KTN_VM* vm, KTN_ObjString* name, int argumentCount) {
+static bool Invoke(KTN_VM* vm, KTN_ObjString* name, int positionalCount, int namedCount) {
+    int argumentCount = positionalCount + (namedCount * 2);
+
     KTN_Value receiver = Peek(vm, argumentCount);
 
     if (!IS_INSTANCE(receiver)) {
@@ -1310,10 +1329,16 @@ static bool Invoke(KTN_VM* vm, KTN_ObjString* name, int argumentCount) {
     KTN_Value value;
     if (TableGet(&instance->properties, name, &value)) {
         vm->stackTop[-argumentCount - 1] = value;
-        return CallValue(vm, value, argumentCount);
+
+        int finalCount = 0;
+        if (!CallValidate(vm, value, positionalCount, namedCount, &finalCount)) {
+            return false;
+        }
+
+        return CallValue(vm, value, finalCount);
     }
 
-    return InvokeFromClass(vm, instance->kata, name, argumentCount);
+    return InvokeFromClass(vm, instance->kata, name, positionalCount, namedCount);
 }
 
 static bool BindMethod(KTN_VM* vm, KTN_ObjKata* kata, KTN_ObjString* name) {
@@ -2410,7 +2435,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 }
 
                 if (!IS_INSTANCE(Peek(vm, 1))) {
-                    if (!KATANE_RUNTIME_ERROR("Only kata instances have properties.", COLOR_MAGENTA "Ara~" COLOR_RESET " Only proper kata instances get my private properties... what are you trying to peek at, naughty~? ♡")) return RUNTIME_ERROR(NULL_VALUE);
+                    if (!KATANE_RUNTIME_ERROR("Only kata instances have properties.", COLOR_MAGENTA "Ara~" COLOR_RESET " Only proper kata instances get my properties... what are you trying to peek at, naughty~? ♡")) return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 KTN_ObjInstance* instance = AS_INSTANCE(Peek(vm, 1));
@@ -3020,7 +3045,12 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 int finalCount = 0;
 
                 if (!CallValidate(vm, Peek(vm, argumentCount), argumentCount, 0, &finalCount)) {
-                    break;
+                    if (vm->caughtException) {
+                        vm->caughtException = false;
+                        vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                        break;
+                    }
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 if (!CallValue(vm, Peek(vm, finalCount), finalCount)) {
@@ -3041,22 +3071,13 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 int finalCount = 0;
 
                 if (!CallValidate(vm, Peek(vm, argumentCount), positionalCount, namedCount, &finalCount)) {
-                    break;
+                    if (vm->caughtException) {
+                        vm->caughtException = false;
+                        vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                        break;
+                    }
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
-
-                printf("finalCount: %d\n", finalCount);
-                ValuePrint(Peek(vm, finalCount));
-                printf("\n");
-
-                printf("          ");
-                printf("( ");
-                for (KTN_Value* slot = vm->stack; slot < vm->stackTop; slot++) {
-                    printf("[");
-                    ObjectRepr(*slot, true);
-                    printf(" ]");
-                }
-                printf(" )");
-                printf("\n");
 
                 if (!CallValue(vm, Peek(vm, finalCount), finalCount)) {
                     if (vm->caughtException) {
@@ -3072,13 +3093,8 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             case OP_INVOKE: {
                 KTN_ObjString* method = READ_STRING();
                 int argumentCount = READ_BYTE();
-                int finalCount = 0;
 
-                if (!CallValidate(vm, Peek(vm, argumentCount), argumentCount, 0, &finalCount)) {
-                    break;
-                }
-
-                if (!Invoke(vm, method, finalCount)) {
+                if (!Invoke(vm, method, argumentCount, 0)) {
                     if (vm->caughtException) {
                         vm->caughtException = false;
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3094,14 +3110,8 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                 KTN_ObjString* method = READ_STRING();
                 int positionalCount = READ_BYTE();
                 int namedCount = READ_BYTE();
-                int argumentCount = positionalCount + (namedCount * 2);
-                int finalCount = 0;
 
-                if (!CallValidate(vm, Peek(vm, argumentCount), positionalCount, namedCount, &finalCount)) {
-                    break;
-                }
-
-                if (!Invoke(vm, method, finalCount)) {
+                if (!Invoke(vm, method, positionalCount, namedCount)) {
                     if (vm->caughtException) {
                         vm->caughtException = false;
                         vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3123,6 +3133,16 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                         if (!KATANE_RUNTIME_ERROR("Cannot call super since sokata has no constructor", COLOR_MAGENTA "Ara ara~" COLOR_RESET " 'super' call failed: missing constructor~!")) return RUNTIME_ERROR(NULL_VALUE);
                     }
 
+                    int finalCount = 0;
+                    if (!CallValidate(vm, sokata->constructor, argumentCount, 0, &finalCount)) {
+                        if (vm->caughtException) {
+                            vm->caughtException = false;
+                            vm->currentFrame = &vm->frames[vm->frameCount - 1];
+                            break;
+                        }
+                        return RUNTIME_ERROR(NULL_VALUE);
+                    }
+
                     if (!Call(vm, AS_CLOSURE(sokata->constructor), argumentCount, sokata)) {
                         return RUNTIME_ERROR(NULL_VALUE);
                     }
@@ -3131,7 +3151,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     break;
                 }
 
-                if (!InvokeFromClass(vm, sokata, method, argumentCount)) {
+                if (!InvokeFromClass(vm, sokata, method, argumentCount, 0)) {
                     return RUNTIME_ERROR(NULL_VALUE);
                 }
                 vm->currentFrame = &vm->frames[vm->frameCount - 1];
