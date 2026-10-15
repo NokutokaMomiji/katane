@@ -60,6 +60,8 @@ static inline int PowerOf2Ceil(int n) {
     return n + 1;
 }
 
+uint32_t StringHash(const char* key, int length);
+
 #if defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64)
 #include <stdarg.h>
 #ifdef __cplusplus

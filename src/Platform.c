@@ -107,6 +107,11 @@ bool KTN_FileWrite(const char* path, const void* data, size_t size) {
     }
 
     if (rename(tempPath, path) != 0) {
+        if (errno == EEXIST) {
+            if (remove(path) == 0) {
+                if (rename(tempPath, path) != 0) return false;
+            }
+        }
         remove(tempPath);
         return false;
     }

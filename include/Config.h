@@ -3,6 +3,7 @@
 
 #define KATANE_EXTENSION ".ktn"
 #define KATANE_VERSION "0.1.0"
+#define KATANE_BYTECODE_VERSION "0.1.0"
 #define LIBRARY_DIRECTORY "libs"
 #define LIBRARY_DIRECTORY_INDEX "main"
 #define PACKAGES_DIRECTORY "apps"
@@ -26,6 +27,16 @@
 #define MAX_INTERPOLATION_NESTING 8
 #define MAX_EXCEPTION_HANDLERS 16
 
+// Katane supports implicit this in class methods, allowing you to do: 
+// mochi b = a + 3; 
+// instead of:
+// mochi b = this.a + 3;
+//
+// However, because of current compiler limitations (It's a one-pass compiler), we cannot
+// detect the names of the properties from the parent class.
+//
+// I dislike that inconsistency, so for now it remains as an experimental feature you can 
+// toggle on in your build.
 //#define EXPERIMENTAL_IMPLICIT_THIS
 #define NAN_BOXING
 

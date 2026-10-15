@@ -466,8 +466,6 @@ KTN_ObjShiki* ShikiNew(KTN_VM* vm, KTN_ObjModule* module, KTN_ShikiType type) {
     newFunction->upvalueCount = 0;
     newFunction->module = module;
     newFunction->returnTypeDescriptor = -1;
-
-    newFunction->docs = NULL;
     newFunction->signature = NULL;
 
     KTN_ChunkInit(&newFunction->chunk);
@@ -475,22 +473,23 @@ KTN_ObjShiki* ShikiNew(KTN_VM* vm, KTN_ObjModule* module, KTN_ShikiType type) {
     return newFunction;
 }
 
-KTN_ObjNative* NativeNew(KTN_VM* vm, NativeFnEx function, const char* name, const char* signature, const char* docs) {
+KTN_ObjNative* NativeNew(KTN_VM* vm, NativeFnEx function, const char* name, KTN_ObjSignature* signature) {
     KTN_ObjNative* newNative = ALLOCATE_OBJ(KTN_ObjNative, OBJ_NATIVE);
     
     newNative->name = name;
     newNative->type = TYPE_FUNCTION;
     newNative->function = function;
     newNative->signature = signature;
-    newNative->docs = docs;
 
     return newNative;
 }
 
-KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString* name, KTN_ObjTypeDescriptor* returnType, const KTN_SignatureParameterSpec* parameters, int parameterCount, KTN_ShikiType shikiType) {
+KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* name, KTN_ObjTypeDescriptor* returnType, const KTN_SignatureParameterSpec* parameters, int parameterCount, KTN_ShikiType shikiType, KTN_ObjString* docs) {
     KTN_ObjSignature* signature = ALLOCATE_OBJ(KTN_ObjSignature, OBJ_SIGNATURE);
 
-    signature->display = display;
+    // TODO: Remove, maybe? It has to be generated from the signature now instead.
+    // We can keep it as a cache.
+    signature->display = NULL;
     signature->name = name;
     signature->returnType = returnType;
     signature->parameterCount = parameterCount;
@@ -499,6 +498,7 @@ KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString
     signature->positionalCount = 0;
     signature->hasVariadic = false;
     signature->namedStart = parameterCount;
+    signature->docs = docs;
 
     Push(vm, OBJECT_VALUE(signature));
 
@@ -564,33 +564,6 @@ static KTN_ObjString* StringAllocate(KTN_VM* vm, char* chars, int length, uint32
     }
 
     return string;
-}
-
-//  FNV-1a Hashing.
-static uint32_t StringHash(const char* key, int length) {
-    uint32_t hash = 2166136261u;
-
-    int step = 1;
-
-    if (length > 256) {
-        // Bitshifting to the left 'n' spaces is akin to dividing by 2^n.
-        // This divides the string into 128 intervals. 
-        // Helpful when you have... say... a **2 million lines JSON file**
-        step = (length >> 7) | 1;
-    }
-
-    for (int i = 0; i < length; i += step) {
-        hash ^= (uint8_t)key[i];
-        hash *= 16777619;
-    }
-
-    hash ^= hash >> 16;
-    hash *= 0x21f0aaadU;
-    hash ^= hash >> 15;
-    hash *= 0x735a2d97U;
-    hash ^= hash >> 15;
-
-    return hash;
 }
 
 KTN_ObjString* StringTake(KTN_VM* vm, char* chars, int length, bool intern) {
@@ -694,6 +667,7 @@ KTN_ObjKata* KataNew(KTN_VM* vm, KTN_ObjString* name) {
 
     kata->typeParameterCount = 0;
     kata->overloadMask = 0;
+    kata->kataType = 0;
     kata->hasTypedFields = false;
     kata->optionalGenerics = false;
     kata->privateConstructor = false;

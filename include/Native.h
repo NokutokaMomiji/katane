@@ -6,6 +6,11 @@
 #include "Object.h"
 #include "Utilities.h"
 #include "VM.h"
+#include "Exceptions.h"
+#include "Messages.h"
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
 
 #define GET_NATIVE(name)        NativeFn##name
 #define GET_METHOD(name)        NativeMethod##name
@@ -29,17 +34,45 @@
 #define THIS                (arguments.positional[0])
 #define VARIADIC_COUNT      (arguments.variadicCount)
 #define VARIADIC(i)         (arguments.variadic[i])
+#define NAMED_COUNT         (arguments.namedCount)
+#define NAMED(name)         (NativeCallArgsFindNamed(&arguments, name))
 
-#define KTN_SIGNATURE(signature) signature 
-#define KTN_DOC(docs) docs 
+#define KTN_ITEM(...)           ((KTN_NativeSignatureItem){ __VA_ARGS__ })
+#define KTN_SIG_NAME(_name)     KTN_ITEM(.item = KTN_ITEM_NAME, .name = (_name))
+#define KTN_DOCS(_docs)         KTN_ITEM(.item = KTN_ITEM_DOCS, .name = (_docs))
+#define KTN_RETURNS(_type)      KTN_ITEM(.item = KTN_ITEM_RETURNS, .type = (_type))
+#define KTN_SHIKI_TYPE(_type)   KTN_ITEM(.item = KTN_ITEM_SHIKI_TYPE, .shikiType = (_type))
+
+#define KTN_PARAM(_name, _type, _kind) KTN_ITEM( \
+    .item = KTN_ITEM_PARAMETER,     \
+    .name = (_name),                \
+    .type = (_type),                \
+    .kind = (_kind),                \
+    .defaultValue = EMPTY_VALUE,    \
+    .defaultIsImmutable = true)
+
+#define KTN_PARAM_DEFAULT(_name, _type, _kind, _default) KTN_ITEM( \
+    .item = KTN_ITEM_PARAMETER,         \
+    .name = (_name),                    \
+    .type = (_type),                    \
+    .kind = (_kind),                    \
+    .defaultValue = (_default),         \
+    .defaultIsImmutable = false)
+
+#define KTN_END KTN_ITEM(.item = KTN_ITEM_END)
+
+#define KTN_SIGNATURE(_name, ...) \
+    ((const KTN_NativeSignatureItem[]){ \
+        KTN_SIG_NAME(_name), \
+        __VA_ARGS__, \
+        KTN_END \
+    })
 
 #define EXPECT_ARGC(count) do {                             \
         if (arguments.positionalCount != (count)) {         \
-            ThrowException(                                 \
-                vm,                                         \
-                "ArgumentError",                            \
-                false,                                      \
-                "Expected %d %s but got %d.",               \
+            KATANE_ARGUMENT_ERROR(                          \
+                NULL,                                       \
+                KTN_MSG_ARGC_EXACT,                         \
                 ((count)),                                  \
                 ((count) == 1) ? "argument" : "arguments",  \
                 arguments.positionalCount                   \
@@ -50,11 +83,9 @@
 
 #define EXPECT_MAX_ARGC(count) do {                             \
         if (arguments.positionalCount > (count)) {              \
-            ThrowException(                                      \
-                vm,                                             \
-                "ArgumentError",                                \
-                false,                                          \
-                "Expected at most %d %s but got %d.",          \
+            KATANE_ARGUMENT_ERROR(                              \
+                NULL,                                           \
+                KTN_MSG_ARGC_MAX,                               \
                 ((count)),                                      \
                 ((count) == 1) ? "argument" : "arguments",      \
                 arguments.positionalCount                       \
@@ -65,11 +96,9 @@
 
 #define EXPECT_MIN_ARGC(count) do {                             \
         if (arguments.positionalCount < (count)) {              \
-            ThrowException(                                      \
-                vm,                                             \
-                "ArgumentError",                                \
-                false,                                          \
-                "Expected at least %d %s but got %d.",          \
+            KATANE_ARGUMENT_ERROR(                              \
+                NULL,                                           \
+                KTN_MSG_ARGC_MIN,                               \
                 ((count)),                                      \
                 ((count) == 1) ? "argument" : "arguments",      \
                 arguments.positionalCount                       \
@@ -80,80 +109,88 @@
 
 #define EXPECT_ARG_TYPE(index, checkMacro, typeName) do {       \
         if (!(checkMacro(arguments.positional[(index)]))) {      \
-            ThrowException(                                      \
-                vm,                                             \
-                "TypeError",                                    \
-                false,                                          \
-                "Argument %d: expected %s.",                    \
-                (index),                                        \
-                (typeName)                                      \
-            );                                                  \
-            RETURN_ERROR(NULL_VALUE);                           \
-        }                                                       \
+            char argumentContext_[32];                           \
+            snprintf(argumentContext_, sizeof(argumentContext_), KTN_CTX_POSITIONAL_ARGUMENT, (int)(index)); \
+            KTN_ThrowTypeError(                                  \
+                vm,                                              \
+                (typeName),                                      \
+                arguments.positional[(index)],                   \
+                argumentContext_                                 \
+            );                                                   \
+            RETURN_ERROR(NULL_VALUE);                            \
+        }                                                        \
     } while (0)
 
 #define EXPECT_ARG_INT(index)       EXPECT_ARG_TYPE(index, IS_INT,    "Int")
 #define EXPECT_ARG_FLOAT(index)     EXPECT_ARG_TYPE(index, IS_DOUBLE, "Float")
 #define EXPECT_ARG_STRING(index)    EXPECT_ARG_TYPE(index, IS_STRING, "String")
-#define EXPECT_ARG_ARRAY(index)     EXPECT_ARG_TYPE(index, IS_ARRAY,  "Array")
 #define EXPECT_ARG_BOOL(index)      EXPECT_ARG_TYPE(index, IS_BOOL,   "Bool")
+#define EXPECT_ARG_ARRAY(index)     EXPECT_ARG_TYPE(index, IS_ARRAY,  "Array")
 #define EXPECT_ARG_MAP(index)       EXPECT_ARG_TYPE(index, IS_MAP,    "Map")
 #define EXPECT_ARG_KATA(index)      EXPECT_ARG_TYPE(index, IS_CLASS,  "Kata")
 
-// Native class builder — allows defining classes with native constructors and methods
-// without hand-writing bytecode.
+
+/// Native kata builder. Allows you to write Katane katas from C code.
+/// Katas can then be registered for use in the VM or in a module.
 typedef struct {
     KTN_VM* vm;
     KTN_ObjKata* builtClass;
 } KTN_NativeKataBuilder;
 
-// Begin building a native class. superclassName may be NULL (inherits nothing) or
-// the name of any class already registered in vm->globals.
-KTN_NativeKataBuilder* KTN_BeginNativeClass(KTN_VM* vm, const char* name, const char* superclassName);
+typedef enum {
+    KTN_ITEM_END,
+    KTN_ITEM_NAME,
+    KTN_ITEM_DOCS,
+    KTN_ITEM_RETURNS,
+    KTN_ITEM_PARAMETER,
+    KTN_ITEM_SHIKI_TYPE
+} KTN_NativeItemType;
 
-// Finalize: register the class in vm->globals and return it.
-KTN_ObjKata* KTN_EndNativeClass(KTN_NativeKataBuilder* builder);
+typedef struct {
+    const char* name;
+    const char* type;
+    KTN_NativeItemType item;
+    KTN_ParameterKind kind;
+    KTN_Value defaultValue;
+    bool defaultIsImmutable;
+    KTN_ShikiType shikiType;
+} KTN_NativeSignatureItem;
 
-// Add a native method. The function receives (vm, arguments) where arguments[0] is 'this'.
-void KTN_AddNativeMethod(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs);
+/// Creates a proper ObjSignature from a NativeSignature. 
+/// You are not meant to use this directly. Use KTN_SIGNATURE instead.
+KTN_ObjSignature* KTN_NativeBuiltinToSignature(KTN_VM* vm, const KTN_NativeSignatureItem* items);
+KTN_NativeKataBuilder* KTN_NativeKataBegin(KTN_VM* vm, const char* name, const char* superclassName);
+KTN_ObjKata* KTN_NativeKataEnd(KTN_NativeKataBuilder* builder);
+void KTN_NativeKataAddMethod(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, KTN_ObjSignature* signature, bool isPrivate, bool isStatic);
+void KTN_NativeKataSetConstructor(KTN_NativeKataBuilder* builder, NativeFnEx function, KTN_ObjSignature* signature, bool isPrivate);
+void KTN_NativeKataAddGetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, KTN_ObjSignature* signature, bool isPrivate, bool isStatic);
+void KTN_NativeKataAddSetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, KTN_ObjSignature* signature, bool isPrivate, bool isStatic);
+void KTN_NativeKataAddProperty(KTN_NativeKataBuilder* builder, const char* name, KTN_Value defaultValue, bool isPrivate, bool isStatic);
+void KTN_NativeKataSetDoc(KTN_NativeKataBuilder* builder, const char* docs);
+void KTN_NativeKataSetGenerics(KTN_NativeKataBuilder* builder);
+void KTN_NativeKataAddType(KTN_NativeKataBuilder* builder, const char* parameterName);
 
-// Set a native constructor. Receives (vm, arguments) where arguments[0] is 'this'.
-void KTN_SetNativeConstructor(KTN_NativeKataBuilder* builder, NativeFnEx function, const char* signature, const char* docs);
+static KTN_Value NativeCallArgsFindNamed(KTN_CallArgs* args, const char* name) {
+    if (args->named == NULL) return EMPTY_VALUE;
+    if (args->signature == NULL) return EMPTY_VALUE;
 
-// Add a getter. Called by OP_GET_PROPERTY; arguments[0] is 'this'.
-void KTN_AddNativeGetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs);
+    KTN_Value* values = args->named;
+    KTN_ObjSignature* signature = args->signature;
 
-// Add a setter. Called by OP_SET_PROPERTY; arguments[0] is 'this', arguments[1] is the new value.
-void KTN_AddNativeSetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs);
+    int namedStart = signature->namedStart;
+    int parameterCount = signature->parameterCount;
+    
+    uint32_t targetHash = StringHash(name, (int)strlen(name));
+    for (int i = namedStart; i < parameterCount; i++) {
+        KTN_ObjString* paramName = signature->parameters[i].name;
 
-// Add a static method. Stored in kata->staticMethods.
-void KTN_AddNativeStaticMethod(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs);
+        if (paramName->hash != targetHash) continue;
+        if (memcmp(paramName->chars, name, paramName->length) != 0) continue;
+        
+        return values[i - namedStart];
+    }
 
-// Add a static getter. Stored in kata->staticMethods as an accessor with getter.
-void KTN_AddNativeStaticGetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs);
-
-// Add a static getter. Stored in kata->staticMethods as an accessor with setter.
-void KTN_AddNativeStaticSetter(KTN_NativeKataBuilder* builder, const char* name, NativeFnEx function, const char* signature, const char* docs);
-
-// Add a static constant property. Stored in kata->staticProperties.
-void KTN_AddNativeStaticProperty(KTN_NativeKataBuilder* builder, const char* name, KTN_Value defaultValue);
-
-// Add an instance property with a default value.
-void KTN_AddNativeProperty(KTN_NativeKataBuilder* builder, const char* name, KTN_Value defaultValue);
-
-// Set documentation for the class itself.
-void KTN_SetClassDoc(KTN_NativeKataBuilder* builder, const char* docs);
-
-// Mark a member as private (adds to kata->privateMembers).
-void KTN_MarkNativePrivate(KTN_NativeKataBuilder* builder, const char* name);
-
-// Mark the constructor as private.
-void KTN_SetPrivateConstructor(KTN_NativeKataBuilder* builder);
-
-// Set the optional generics flag (for Array, Map — allows call without type args).
-void KTN_SetOptionalGenerics(KTN_NativeKataBuilder* builder);
-
-// Add a named type parameter (for optional-generic classes).
-void KTN_AddTypeParameter(KTN_NativeKataBuilder* builder, const char* parameterName);
+    return EMPTY_VALUE;
+}
 
 #endif

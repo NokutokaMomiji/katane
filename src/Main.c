@@ -7,11 +7,13 @@
 #include <locale.h>
 #include "Common.h"
 #include "Config.h"
-#include "Chunk.h"
-#include "Debug.h"
 #include "VM.h"
 #include "Utilities.h"
-#include "Tutorial.h"
+
+#define COMPILE_ERROR_CODE 65
+#define RUNTIME_ERROR_CODE 70
+#define OOM_ERROR_CODE 74
+#define INVALID_PARAM_ERROR_CODE 64
 
 // Defined in VM.c
 void registerModuleFile(KTN_VM* vm, KTN_ObjModule* module);
@@ -20,6 +22,8 @@ void registerRoot(KTN_VM* vm);
 #ifdef _WIN32
 #include <windows.h>
 #endif
+
+int returnCode = 0;
 
 static void printHeader() {
     printf(COLOR_CUSTOM "Katane" COLOR_RESET " %s ", KATANE_VERSION);
@@ -31,6 +35,10 @@ static void printVersion() {
     printf("Katane %s\n", KATANE_VERSION);
 }
 
+static void printBytecodeVersion() {
+    printf("Katane bytecode %s", KATANE_BYTECODE_VERSION);
+}
+
 static void showUsage(const char* executableName, bool fail) {
     FILE* stream = (fail) ? stderr : stdout;
 
@@ -40,10 +48,13 @@ static void showUsage(const char* executableName, bool fail) {
         "Options:\n"
         "  --help, -h                 Show this help text\n"
         "  --version, -v              Show the Katane version\n"
+        "  --bytecode-version         Show the Katane bytecode version\n"
         "  --repl                     Start the interactive REPL\n"
         "  --eval, -e <code>          Execute inline Katane source\n"
+        "  --interactive, -i          Execute the code then start the REPL\n"
         "  --dump-bytecode            Print compiled bytecode before execution\n"
-        "  --dump-bytecode-only       Print compiled bytecode and exit\n",
+        "  --dump-bytecode-only       Print compiled bytecode and exit\n"
+        "  --boring-mode              Make Katane be more \"professional\"\n",
         executableName);
 }
 
@@ -112,6 +123,18 @@ static void Repl(KTN_VM* vm) {
 
     printHeader();
 
+    /*if (returnCode == COMPILE_ERROR_CODE) {
+        printf("[ " COLOR_CYAN "Note" COLOR_RESET " ]: Script failed to compile. No state is available\n");
+    } else if (returnCode == RUNTIME_ERROR_CODE) {
+        printf("[ " COLOR_CYAN "Note" COLOR_RESET " ]: Program state available.");
+    }*/
+
+    if (returnCode == COMPILE_ERROR_CODE) {
+        printf(COLOR_CYAN "->" COLOR_RESET " Script failed to compile. No state is available\n");
+    } else if (returnCode == RUNTIME_ERROR_CODE) {
+        printf(COLOR_CYAN "->" COLOR_RESET " Program state available.\n");
+    }
+
     KTN_ObjModule* module = generateModule(vm, "<script>", "<repl>");
 
     while (1) {
@@ -146,7 +169,7 @@ static void Repl(KTN_VM* vm) {
 
             if (!source) {
                 fprintf(stderr, "[ERROR]: Out of memory in REPL.\n");
-                exit(74);
+                exit(OOM_ERROR_CODE);
             }
         }
         
@@ -192,14 +215,14 @@ static char* ReadFileContents(const char* path) {
     
     if (!dataBuffer) {
         fprintf(stderr, "[" COLOR_RED "ERROR" COLOR_RESET "]: Not enough memory to read \"%s\".", path);
-        exit(74);
+        exit(OOM_ERROR_CODE);
     }
     
     size_t bytesRead = fread(dataBuffer, sizeof(char), fileSize, sourceFile);
     
     if (bytesRead == 0 && fileSize > 0) {
         fprintf(stderr, "[" COLOR_RED "ERROR" COLOR_RESET "]: Failed to read file \"%s\".", path);
-        exit(74);
+        exit(OOM_ERROR_CODE);
     }
     
     dataBuffer[bytesRead] = '\0';
@@ -215,7 +238,7 @@ static bool FileExists(const char* path) {
         if (errno == EACCES) return false;
 
         fprintf(stderr, "[" COLOR_RED "ERROR" COLOR_RESET "]: Could not open file \"%s\": %s\n", path, strerror(errno));
-        exit(74);
+        exit(OOM_ERROR_CODE);
     }
 
     return true;
@@ -231,7 +254,7 @@ static char* ResolvePath(const char* path) {
 #endif
 }
 
-static void RunFile(KTN_VM* vm, const char* path) {
+static int RunFile(KTN_VM* vm, const char* path) {
     const char* actualPath = path;
     char* allocatedPath = NULL;
 
@@ -252,21 +275,25 @@ static void RunFile(KTN_VM* vm, const char* path) {
     free(resolvedPath);
 
     if (allocatedPath) free(allocatedPath);
-    if (result.status == INTERPRET_COMPILE_ERROR) exit(65);
-    if (result.status == INTERPRET_RUNTIME_ERROR) exit(70);
+    if (result.status == INTERPRET_COMPILE_ERROR) return COMPILE_ERROR_CODE;
+    if (result.status == INTERPRET_RUNTIME_ERROR) return RUNTIME_ERROR_CODE;
+
+    return 0;
 }
 
-static void RunEval(KTN_VM* vm, const char* source) {
+static int RunEval(KTN_VM* vm, const char* source) {
     KTN_ObjModule* module = generateModule(vm, "", "<eval>");
     KTN_InterpretResult result = KTN_Interpret(vm, module, source);
 
-    if (result.status == INTERPRET_COMPILE_ERROR) exit(65);
-    if (result.status == INTERPRET_RUNTIME_ERROR) exit(70);
+    if (result.status == INTERPRET_COMPILE_ERROR) return COMPILE_ERROR_CODE;
+    if (result.status == INTERPRET_RUNTIME_ERROR) return RUNTIME_ERROR_CODE;
 
     if (result.status == INTERPRET_OK && !IS_NULL(result.value) && !vm->shouldExitAfterBytecode) {
         ObjectRepr(result.value, false);
         printf("\n");
     }
+
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
@@ -276,7 +303,7 @@ int main(int argc, char* argv[]) {
 
     if (vm == NULL) {
         fprintf(stderr, "[" COLOR_RED "ERROR" COLOR_RESET "]: Out of memory.");
-        return 74;
+        return OOM_ERROR_CODE;
     }
 
 #ifdef _WIN32
@@ -290,6 +317,7 @@ int main(int argc, char* argv[]) {
     const char* scriptPath = NULL;
     const char* evalSource = NULL;
     bool forceRepl = false;
+    bool interactive = false;
 
     for (int i = 1; i < argc; i++) {
         const char* arg = argv[i];
@@ -311,6 +339,11 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
+        if (strcmp(arg, "--interactive") == 0 || strcmp(arg, "-i") == 0) {
+            interactive = true;
+            continue;
+        }
+
         if (strcmp(arg, "--dump-bytecode") == 0) {
             vm->shouldPrintBytecode = true;
             continue;
@@ -322,11 +355,16 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
+        if (strcmp(arg, "--boring-mode") == 0) {
+            vm->kataneMode = false;
+            continue;
+        }
+
         if (strcmp(arg, "--eval") == 0 || strcmp(arg, "-e") == 0) {
             if (i + 1 >= argc) {
                 showUsage(argv[0], true);
                 VMFree(vm);
-                return 64;
+                return INVALID_PARAM_ERROR_CODE;
             }
 
             evalSource = argv[++i];
@@ -338,7 +376,7 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "[" COLOR_RED "ERROR" COLOR_RESET "]: Unknown option \"%s\".\n", arg);
             showUsage(argv[0], true);
             VMFree(vm);
-            return 64;
+            return INVALID_PARAM_ERROR_CODE;
         }
 
         scriptPath = arg;
@@ -349,22 +387,30 @@ int main(int argc, char* argv[]) {
     if (evalSource != NULL && scriptPath != NULL) {
         fprintf(stderr, "[" COLOR_RED "ERROR" COLOR_RESET "]: Cannot use --eval together with a script path.\n");
         VMFree(vm);
-        return 64;
+        return INVALID_PARAM_ERROR_CODE;
     }
 
     if (forceRepl && (evalSource != NULL || scriptPath != NULL)) {
         fprintf(stderr, "[" COLOR_RED "ERROR" COLOR_RESET "]: --repl cannot be combined with --eval or a script path.\n");
         VMFree(vm);
-        return 64;
+        return INVALID_PARAM_ERROR_CODE;
     }
 
     if (forceRepl || (scriptPath == NULL && evalSource == NULL)) {
         Repl(vm);
     } else if (evalSource != NULL) {
-        RunEval(vm, evalSource);
+        returnCode = RunEval(vm, evalSource);
+
+        if (interactive) Repl(vm);
+        else if (returnCode) return returnCode;
     } else {
-        RunFile(vm, scriptPath);
+        returnCode = RunFile(vm, scriptPath);
+
+        if (interactive) Repl(vm);
+        else if (returnCode) return returnCode;
     }
+
+    printf("Freeing VM.");
 
     VMFree(vm);
     return 0;

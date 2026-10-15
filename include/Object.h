@@ -8,6 +8,7 @@
 #include "Table.h"
 #include "HashMap.h"
 #include "Utilities.h"
+#include <stdint.h>
 
 typedef struct KTN_ObjTypeDescriptor KTN_ObjTypeDescriptor;
 typedef struct KTN_ObjKata KTN_ObjKata;
@@ -120,11 +121,13 @@ typedef enum {
     KTN_NAME_RUNES,
     KTN_NAME_NEXT,
     KTN_NAME_DONE,
-    KTN_NAME_COUNT
+    KTN_NAME_LENGTH,
+    KTN_NAME_COUNT,
+    KTN_NAME_END
 } KTN_WellKnownName;
 
 typedef struct {
-    KTN_ObjString* values[KTN_NAME_COUNT];
+    KTN_ObjString* values[KTN_NAME_END];
 } KTN_WellKnownNames;
 
 typedef enum {
@@ -163,34 +166,8 @@ typedef struct {
     KTN_Chunk chunk;
     KTN_ObjString* name;
     KTN_ObjModule* module;
-    KTN_ObjString* docs;
     KTN_ObjSignature* signature;
 } KTN_ObjShiki;
-
-typedef struct {
-    bool success;
-    KTN_Value value;  
-} KTN_NativeResult;
-
-typedef struct {
-    KTN_Value* positional;
-    KTN_Value* variadic;
-    KTN_Value* named;
-    int positionalCount;
-    int variadicCount;
-    int namedCount;
-} KTN_CallArgs;
-
-typedef KTN_NativeResult (*NativeFnEx)(KTN_VM* vm, KTN_CallArgs arguments);
-
-typedef struct {
-    KTN_Object object;
-    NativeFnEx function;
-    KTN_ShikiType type;
-    const char* name;
-    const char* signature;
-    const char* docs;
-} KTN_ObjNative;
 
 typedef enum {
     KTN_PARAM_POSITIONAL,
@@ -223,6 +200,7 @@ typedef struct KTN_ObjSignature {
     KTN_Object object;
     KTN_ObjString* display;
     KTN_ObjString* name;
+    KTN_ObjString* docs;
     KTN_ObjTypeDescriptor* returnType;
     KTN_SignatureParameter* parameters;
     int parameterCount;
@@ -296,6 +274,14 @@ typedef struct {
     KTN_Value setter;
 } KTN_ObjAccessor;
 
+typedef enum {
+    KTN_KATA_TYPE_FINAL = 1,
+    KTN_KATA_TYPE_ABSTRACT = 2,
+    KTN_KATA_TYPE_INTERFACE = 4,
+    KTN_KATA_TYPE_SEALED = 8,
+    KTN_KATA_TYPE_EXTENSION = 16
+} KTN_KataType;
+
 typedef struct KTN_ObjKata {
     KTN_Object object;
     KTN_ObjString* className;
@@ -322,7 +308,8 @@ typedef struct KTN_ObjKata {
     struct KTN_ObjKata* sokata; // Superclass.
 
     int typeParameterCount;
-    uint16_t overloadMask;
+    uint32_t overloadMask;
+    uint8_t kataType;
     bool hasTypedFields;
     bool privateConstructor;
     bool optionalGenerics;
@@ -350,6 +337,7 @@ typedef enum {
     TD_TYPE_VARIABLE
 } KTN_TypeDescriptorType;
 
+/// Represents a type descriptor.
 typedef struct KTN_ObjTypeDescriptor {
     KTN_Object object;
     KTN_TypeDescriptorType type;
@@ -365,12 +353,51 @@ typedef struct KTN_ObjTypeDescriptor {
     struct KTN_ObjTypeDescriptor* base;
 } KTN_ObjTypeDescriptor;
 
+/// Represents the result by a native function. 
+///
+/// Result value is stored in [value]. If [success] is false, the result should be discarded.
+typedef struct {
+    bool success;
+    KTN_Value value;  
+} KTN_NativeResult;
+
+/// Used by native functions, contains all of the call arguments to the function.
+/// 
+/// Values are stored in [positional], [variadic], and [named]. The signature of the called function
+/// is available in [signature]. If the function is a method, the instance is stored in [receiver].
+///
+/// This must never be instantiated by itself or used directly. Use the relevant macros defined
+/// in Native.h
+typedef struct {
+    KTN_ObjSignature* signature;
+    KTN_ObjInstance* receiver;
+    KTN_Value* positional;
+    KTN_Value* variadic;
+    KTN_Value* named;
+    int positionalCount;
+    int variadicCount;
+    int namedCount;
+} KTN_CallArgs;
+
+/// Defines the function signature of a native Katane function.
+typedef KTN_NativeResult (*NativeFnEx)(KTN_VM* vm, KTN_CallArgs arguments);
+
+/// Katane object that defines a native built-in function.
+typedef struct {
+    KTN_Object object;
+    NativeFnEx function;
+    KTN_ShikiType type;
+    const char* name;
+    KTN_ObjSignature* signature;
+} KTN_ObjNative;
+
+/// Builds a new module object.
 KTN_ObjModule* ModuleNew(KTN_VM* vm, char* name, char* file, KTN_ObjModule* parent);
 
 KTN_ObjClosure* ClosureNew(KTN_VM* vm, KTN_ObjShiki* function);
 KTN_ObjShiki* ShikiNew(KTN_VM* vm, KTN_ObjModule* module, KTN_ShikiType type);
-KTN_ObjNative* NativeNew(KTN_VM* vm, NativeFnEx function, const char* name, const char* signature, const char* docs);
-KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString* name, KTN_ObjTypeDescriptor* returnType, const KTN_SignatureParameterSpec* parameters, int parameterCount, KTN_ShikiType shikiType);
+KTN_ObjNative* NativeNew(KTN_VM* vm, NativeFnEx function, const char* name, KTN_ObjSignature* signature);
+KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* name, KTN_ObjTypeDescriptor* returnType, const KTN_SignatureParameterSpec* parameters, int parameterCount, KTN_ShikiType shikiType, KTN_ObjString* docs);
 
 KTN_ObjArray* ArrayNew(KTN_VM* vm, size_t initialSize);
 KTN_ObjMap* MapNew(KTN_VM* vm, size_t initialSize);

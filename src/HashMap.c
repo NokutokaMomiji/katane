@@ -22,6 +22,7 @@
 #include "Utilities.h"
 #include "VM.h"
 #include "Value.h"
+#include "Exceptions.h"
 
 #define IDEAL(hash, capacity)       ((hash) & (uint32_t)((capacity) - 1))
 #define NEXT_SLOT(index, capacity)  (((index) + 1) & (uint32_t)((capacity) - 1))
@@ -78,25 +79,18 @@ static uint32_t HashMapDispatchHashCode(KTN_VM* vm, KTN_ObjInstance* instance) {
 
     if (!TableGet(&kata->methods, KTN_GetWellKnownName(vm, KTN_NAME_HASH_CODE), &hashCodeGetter)) {
         return HashPointer(instance);
-
-        KTN_ThrowException(vm, "PropertyError", false, "\"%s\" object has no getter \"hashCode\".");
-        return 0;
     }
     
+    // This should never happen.
     if (!IS_ACCESSOR(hashCodeGetter)) {
         return HashPointer(instance);
-
-        KTN_ThrowException(vm, "PropertyError", false, "\"%s\" object has no getter \"hashCode\".");
-        return 0;
     }
 
     KTN_ObjAccessor* accessor = AS_ACCESSOR(hashCodeGetter);
 
+    // Should also never happen. All objects have a default hashCode getter.
     if (IS_EMPTY(accessor->getter)) {
         return HashPointer(instance);
-
-        KTN_ThrowException(vm, "PropertyError", false, "\"%s\" object has no getter \"hashCode\".");
-        return 0;
     }
 
     Push(vm, OBJECT_VALUE(instance));
@@ -109,8 +103,8 @@ static uint32_t HashMapDispatchHashCode(KTN_VM* vm, KTN_ObjInstance* instance) {
 
     KTN_Value hashResult = Pop(vm);
 
-    if (!IS_INT(hashResult)) {
-        KTN_ThrowException(vm, "TypeError", false, "Expected integer for hash.");
+    if (!IS_INT(hashResult)){
+        KTN_ThrowTypeError(vm, "Int", hashResult, "Instance hash code");
         return 0;
     }
 
@@ -499,16 +493,6 @@ bool KTN_HashMapDelete(KTN_VM* vm, KTN_HashMap* map, KTN_Value key) {
 }
 
 void KTN_HashMapMark(KTN_VM* vm, KTN_HashMap* map) {
-    /*for (int i = 0; i < map->capacity; i++) {
-        KTN_HashEntry* entry = &map->entries[i];
-
-        if (IS_EMPTY(entry->key))
-            continue;
-
-        KTN_MemoryMarkValue(vm, entry->key);
-        KTN_MemoryMarkValue(vm, entry->value);
-    }*/
-
     int32_t index = map->orderHead;
     
     while (index >= 0) {

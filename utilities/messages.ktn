@@ -1,0 +1,277 @@
+/*
+    messages.ktn
+    Nokutoka Momiji
+
+    Katane has two modes: default mode and boring mode. Therefore, for every error message, we need
+    both a boring version and a katane version. These messages are stored as macros in include/Messages.h
+
+    To make the entire process of updating and managing these messages a lot more bearable, as part of the
+    de-duplication of error messages, I've decided to move them all to a CSV. The header file then gets generated
+    from it. This way, it makes it easier for us to implement new messages in the future.
+
+    Because Katane is a programming language, I've written this tool in Katane.
+
+    (15/10/2026) This script helped debug a GC error which caused the StringWrapper constructor to get freed
+                 mid-execution. Dogfood, kids. It saves lives.
+*/
+
+/// Helper class for useful string utilities.
+/// 
+/// This was writen prior to Katane's built-in String methods. However, Katane is 
+/// quite robust, so many of its elements can be written IN Katane.
+kata StringWrapper {
+    mochi text;
+    mochi length;
+
+    StringWrapper(text: String) {
+        this.text = text;
+        this.length = length(text);
+    }
+
+    shiki split(delimiter: String = '\n', respectQuotes: Bool = false): Array {
+        assert (length(delimiter) == 1) : "Delimiter must be a singular char";
+
+        mochi lines = [];
+        mochi counter = 0;
+        mochi buffer = "";
+        mochi inQuotes = false;
+
+        for (mochi i = 0; i < this.length; i++) {
+            mochi char = this.text[i];
+            mochi previous;
+            
+            if (i > 0) previous = this.text[i - 1];
+
+            if (char == delimiter && !inQuotes) {
+                lines[counter++] = StringWrapper(buffer);
+                buffer = "";
+                continue;
+            }
+
+            if (char == '"' && previous != '\\') {
+                inQuotes = !inQuotes;
+            }
+
+            buffer += char;
+        }
+
+        if (length(buffer) > 0) {
+            lines[counter++] = StringWrapper(buffer);
+        }
+
+        return lines;
+    }
+
+    shiki substring(start: Int, end: Int? = null): StringWrapper {
+        if (end == null) {
+            end = this.length;
+        }
+
+        assert (start >= 0 && start < this.length && start <= end) : "Start is out of range.";
+        assert (end >= 0 && end <= this.length) : "End is out of range.";
+
+        // Empty substring.
+        if (start == end) return StringWrapper("");
+
+        mochi buffer = "";
+
+        for (mochi i = start; i < end; i++) {
+            buffer += this.text[i];
+        }
+
+        return StringWrapper(buffer);
+    }
+
+    shiki trimLeft(): StringWrapper {
+        if (this.length == 0) return StringWrapper(this.text);
+
+        mochi i = 0;
+
+        while (this.text[i] == " " && i < this.length) i++;
+
+        return this.substring(i);
+    }
+
+    shiki trimRight(): StringWrapper {
+        if (this.length == 0) return StringWrapper(this.text);
+
+        mochi i = this.length - 1;
+
+        while (this.text[i] == " " && i > 0) i--;
+
+        return this.substring(0, i);
+    }
+
+    shiki trim(): StringWrapper => this.trimLeft().trimRight();
+
+    shiki contains(substring: String | StringWrapper): Bool => this.indexOf(substring) != -1;
+
+    shiki indexOf(substring: String | StringWrapper, start: Int = 0) {
+        if (this.length == 0) return -1;
+
+        mochi text = "";
+        mochi len = 0;
+
+        if (substring is StringWrapper) {
+            text = substring.text;
+            len = substring.length;
+        } else {
+            text = substring;
+            len = length(substring);
+        }
+
+        assert (len > 0) : "Substring cannot be empty.";
+        assert (len <= this.length) : "Substring cannot be longer than the string";
+        assert (0 <= start && start < this.length) : "Start out of range.";
+        
+        for (mochi i = 0; i < this.length; i++) {
+            mochi j = i;
+
+            for (mochi n = 0; n <= len; n++) {
+                if (n == len) return i;
+
+                if (j >= this.length || this.text[j++] != text[n]) {
+                    break;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    shiki startsWith(substring: String | StringWrapper) {
+        if (substring is String) {
+            substring = StringWrapper(substring);
+        }
+
+        if (this.length < substring.length) return false;
+
+        for (mochi i = 0; i < substring.length; i++) {
+            if (this.text[i] != substring.text[i]) return 0;
+        }
+
+        return true;
+    }
+
+    shiki replace(substring: String | StringWrapper, replacement: String | StringWrapper) {
+        if (substring is String) {
+            substring = StringWrapper(substring);
+        }
+
+        if (replacement is String) {
+            replacement = StringWrapper(replacement);
+        }
+
+        if (this.length < substring.length) return this;
+
+        mochi len = substring.length;
+
+        assert (len > 0) : "Substring cannot be empty.";
+        assert (len <= this.length) : "Substring cannot be longer than the string";
+
+        mochi buffer = "";
+        mochi i = 0;
+        
+        while (i < this.length) {
+            mochi match = true;
+
+            // Clean lookahead check: see if substring matches starting at index i
+            for (mochi n = 0; n < len; n++) {
+                if (i + n >= this.length || this.text[i + n] != substring.text[n]) {
+                    match = false;
+                    break;
+                }
+            }
+
+            if (match) {
+                buffer += replacement.text;
+                i += len; // Safely skip the EXACT length of the matched substring
+            } else {
+                buffer += this.text[i];
+                i++; // Advance exactly 1 character when there is no match
+            }
+        }
+
+        return StringWrapper(buffer);
+    }
+
+    shiki toString() => this.text;
+}
+
+kata Message {
+    mochi macro;
+    mochi boring;
+    mochi katane;
+
+    Message(macro: String, boring: String, katane: String) {
+        this.macro = macro;
+        this.boring = boring;
+        this.katane = katane;
+    }
+
+    shiki toString() => "#define ${this.macro} \\\n    ${this.boring}, \\\n    ${this.katane}";
+}
+
+shiki convertToMessages(content: Array): Array {
+    mochi numOfLines = length(content);
+    mochi messages = [];
+
+    for (mochi i = 0; i < numOfLines; i++) {
+        mochi line = content[i].split(',', true);
+        mochi lineLength = length(line);
+
+        assert (lineLength >= 3) : "Missing messages in line: ${line}";
+
+        messages[i] = Message(line[0].text, line[1].text, line[2].text);
+    }
+
+    return messages;
+}
+
+shiki embedMessagesInHeader(header: StringWrapper, messages: Array): String {
+    mochi buffer = "";
+    mochi numOfMessages = length(messages);
+
+    for (mochi i = 0; i < numOfMessages; i++) {
+        buffer += "${messages[i]}\n\n";
+    }
+
+    print("In embedMessagesInHeader: ${header}");
+    return header.replace("<%s>", buffer).text;
+}
+
+/// Katane allows you to define an optional entry-point. It will be automatically run after the script.
+entry shiki main() {
+    const mochi messagesCsv = "katane_messages.csv";
+    const mochi messagesTemplate = "Messages.h";
+    const mochi messagesOutput = "../include/Messages.h";
+
+    mochi contents;
+    mochi header;
+
+    try {
+        contents = StringWrapper(readFile(messagesCsv));
+        header = StringWrapper(readFile(messagesTemplate));
+    } catch on IOException (e, stackTrace) {
+        print("[ERROR]: Failed to open file: ${e.message}");
+        return;
+    }
+
+    print("Read files.");
+
+    mochi lines = contents.split();
+
+    print("Split lines.");
+
+    mochi messages = convertToMessages(lines[1:]);
+    
+    print("Converted to messages.");
+    
+    mochi newHeader = embedMessagesInHeader(header, messages);
+
+    print("Generated new header.");
+
+    writeFile(messagesOutput, newHeader);
+
+    print("Wrote file!");
+}

@@ -109,6 +109,7 @@ struct KTN_VM {
     bool showWarnings;
     bool shouldPrintBytecode;
     bool shouldExitAfterBytecode;
+    bool hasRunMain;
 
     char** stdArgs;
     int stdArgsCount;
@@ -157,10 +158,6 @@ void KTN_CloseUpvalues(KTN_VM* vm, KTN_Value* last);
 void ErrorPush(KTN_VM* vm, KTN_ErrorFrame* frame);
 KTN_ErrorFrame* ErrorPop(KTN_VM* vm);
 KTN_ErrorFrame* ErrorPeek(KTN_VM* vm);
-
-bool KTN_RuntimeError(KTN_VM* vm, const char* format, ...);
-bool KTN_ThrowException(KTN_VM* vm, const char* type, bool isAssert, const char* format, ...);
-bool KTN_ThrowTypeError(KTN_VM* vm, const char* expectedBuffer, const char* actualName, const char* context);
 bool KTN_ThrowValue(KTN_VM* vm, KTN_ObjInstance* exception, bool buildTrace);
 
 #define ThrowException KTN_ThrowException

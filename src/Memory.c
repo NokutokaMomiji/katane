@@ -4,8 +4,10 @@
 #include "Compiler.h"
 #include "Memory.h"
 #include "Object.h"
+#include "Table.h"
 #include "VM.h"
 #include "TypeDescriptor.h"
+#include "Value.h"
 
 #ifdef DEBUG_LOG_GC
 #include <stdio.h>
@@ -117,12 +119,17 @@ static void BlackenObject(KTN_VM* vm, KTN_Object* object) {
         case OBJ_CLASS: {
             KTN_ObjKata* kata = (KTN_ObjKata*)object;
             KTN_MemoryMarkObject(vm, (KTN_Object*)kata->className);
+            KTN_MemoryMarkValue(vm, kata->constructor);
             MarkArray(vm, &kata->methodNames);
             TableMark(vm, &kata->methods);
             TableMark(vm, &kata->properties);
-            TableMark(vm, &kata->fieldTypes);
-
+            TableMark(vm, &kata->staticMethods);
+            TableMark(vm, &kata->staticProperties);
             TableMark(vm, &kata->privateMembers);
+            TableMark(vm, &kata->staticPrivateMembers);
+            TableMark(vm, &kata->fieldTypes);
+            TableMark(vm, &kata->staticFieldTypes);
+            KTN_MemoryMarkObject(vm, (KTN_Object*)kata->sokata);
             
             if (kata->docs != NULL)
                 KTN_MemoryMarkObject(vm, (KTN_Object*)kata->docs);
@@ -170,6 +177,7 @@ static void BlackenObject(KTN_VM* vm, KTN_Object* object) {
             KTN_ObjBoundMethod* bound = (KTN_ObjBoundMethod*)object;
             KTN_MemoryMarkValue(vm, bound->receiver);
             KTN_MemoryMarkObject(vm, (KTN_Object*)bound->method);
+            KTN_MemoryMarkObject(vm, (KTN_Object*)bound->owner);
             break;
         }
 
@@ -248,13 +256,17 @@ static void BlackenObject(KTN_VM* vm, KTN_Object* object) {
         case OBJ_ACCESSOR: {
             KTN_ObjAccessor* accessor = (KTN_ObjAccessor*)object;
 
-            KTN_MemoryMarkObject(vm, (KTN_Object*)accessor->getter);
-            KTN_MemoryMarkObject(vm, (KTN_Object*)accessor->setter);
-        
+            KTN_MemoryMarkValue(vm, accessor->getter);
+            KTN_MemoryMarkValue(vm,accessor->setter);
+    
             break;
         }
 
-        case OBJ_NATIVE:
+        case OBJ_NATIVE: {
+            KTN_ObjNative* native = (KTN_ObjNative*)object;
+            KTN_MemoryMarkObject(vm, (KTN_Object*)native->signature);
+            break;
+        }
         case OBJ_STRING:
             KTN_MemoryMarkObject(vm, object);
         case OBJ_POINTER:
@@ -477,7 +489,8 @@ static void MarkRoots(KTN_VM* vm) {
     KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeArray);
     KTN_MemoryMarkObject(vm, (KTN_Object*)vm->typeMap);
 
-    KTN_MemoryMarkObject(vm, (KTN_Object*)vm->defaultToString);
+    if (vm->defaultToString)
+        KTN_MemoryMarkObject(vm, (KTN_Object*)vm->defaultToString);
 
     TableMark(vm, &vm->globals);
     TableMark(vm, &vm->modules);

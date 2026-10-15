@@ -68,6 +68,60 @@ static int ConstantLongInstruction(const char* name, KTN_Chunk* chunk, int offse
     return offset + 5;  // We skip over the Constant Operation Code + the 4 bytes that make up the long index.
 }
 
+static int ClassInstruction(const char* name, KTN_Chunk* chunk, int offset) {
+    uint32_t constantIndex = (uint32_t)(chunk->code[offset + 1] << 24)
+                           | (uint32_t)(chunk->code[offset + 2] << 16)
+                           | (uint32_t)(chunk->code[offset + 3] << 8)
+                           | (uint32_t)(chunk->code[offset + 4]);
+    uint8_t kataType = chunk->code[offset + 5];
+    const char* kataTypeText = "standard";
+
+    if (kataType & KTN_KATA_TYPE_ABSTRACT) {
+        if (kataType & KTN_KATA_TYPE_FINAL) {
+            kataTypeText = "abstract final";
+        } else {
+            kataTypeText = "abstract";
+        }
+    } else if (kataType & KTN_KATA_TYPE_FINAL) {
+        kataTypeText = "final";
+    } else if (kataType & KTN_KATA_TYPE_INTERFACE) {
+        kataTypeText = "interface";
+    } else if (kataType & KTN_KATA_TYPE_SEALED) {
+        if (kataType & KTN_KATA_TYPE_ABSTRACT) {
+            kataTypeText = "sealed final";
+        } else if (kataType & KTN_KATA_TYPE_INTERFACE) {
+            kataTypeText = "sealed interface";
+        } else {
+            kataTypeText = "sealed";
+        }
+    } else if (kataType & KTN_KATA_TYPE_EXTENSION) {
+        kataTypeText = "extension";
+    }
+
+    printf("%-16s %4" PRIu32 " '", name, constantIndex);
+    ObjectRepr(chunk->constants.values[constantIndex], true);
+    printf("' (%s)\n", kataTypeText);
+    return offset + 6;
+}
+
+static int DeferredInstruction(const char* name, KTN_Chunk* chunk, int offset) {
+    uint8_t type = chunk->code[offset + 1];
+    uint16_t targetScopeDepth = ((uint16_t)chunk->code[offset + 2]) << 8 | (uint16_t)chunk->code[offset + 3];
+
+    printf("%-16s %4d %4d", name, type, targetScopeDepth);
+
+    if (type == 0x00) {
+        printf("\n");
+        return offset + 4;
+    }
+
+    uint8_t sign = (type == 0x01) ? 1 : -1;
+    uint16_t Jump = (uint16_t)(chunk->code[offset + 4] << 8);
+    Jump |= chunk->code[offset + 5];
+    printf("%-16s %4d -> %d\n", name, offset, offset + 6 + sign * Jump);
+    return offset + 6;
+}
+
 static int ConstantLongPairInstruction(const char* name, KTN_Chunk* chunk, int offset) {
     uint32_t first  = (uint32_t)(chunk->code[offset + 1] << 24)
                     | (uint32_t)(chunk->code[offset + 2] << 16)
@@ -348,7 +402,7 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
         case OP_MAP:
             return ShortInstruction("OP_MAP", chunk, offset);
         case OP_CLASS:
-            return ConstantLongInstruction("OP_CLASS", chunk, offset);
+            return ClassInstruction("OP_CLASS", chunk, offset);
         case OP_INVOKE:
             return InvokeInstructionLong("OP_INVOKE", chunk, offset);
         case OP_INVOKE_EX:
@@ -388,6 +442,8 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
             return JumpInstruction("OP_BEGIN_CATCH", 1, chunk, offset);
         case OP_END_CATCH:
             return SimpleInstruction("OP_END_CATCH", offset);
+        case OP_DEFER_ACTION:
+            return DeferredInstruction("OP_DEFER_ACTION", chunk, offset);
         case OP_RAISE:
             return ByteInstruction("OP_RAISE", chunk, offset);
         case OP_RETHROW:

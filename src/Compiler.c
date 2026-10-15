@@ -60,10 +60,7 @@ typedef struct {
 typedef struct {
     KTN_Token name;
     int depth;
-
-    int32_t typeDescriptorIndex; // -1 if there is no type. Otherwise, the index
-                                                              // in the constant table.
-
+    int32_t typeDescriptorIndex;
     bool isCaptured;
     bool isFinal;
     bool isAssigned;
@@ -114,6 +111,8 @@ typedef struct Compiler {
 
     bool inFinally;
     bool parsedEntryPoint;
+    KTN_Token entryPoint;
+    KTN_Token lastPrefixToken;
 } Compiler;
 
 typedef struct ClassCompiler {
@@ -156,6 +155,19 @@ ClassCompiler* currentClass = NULL;
 BreakableContext* currentBreakable = NULL;
 TryContext* currentTry = NULL;
 bool collectOnly = false;
+
+static void CompilerExpression();
+static void CompilerStatement();
+static void CompilerDeclaration();
+static void VariableDeclaration();
+static void VariableSet(KTN_Token name, bool canAssign);
+static void VariableSetPrevious(bool canAssign);
+static ParseRule* CompilerGetRule(KTN_TokenType type);
+static void CompilerParsePrecedence(Precedence precedence);
+static void NamedVariable(KTN_Token name, bool canAssign);
+static KTN_Token SyntheticToken(const char* text);
+static void CompilerVariable(bool canAssign);
+static void RegisterTopLevelConst(KTN_Token name, KTN_Value value);
 
 static KTN_Chunk* CurrentChunk() { return &current->function->chunk; }
 
@@ -304,7 +316,6 @@ static void ErrorAt(KTN_Token* token, const char* msg) {
 }
 
 static void Error(const char* msg) { ErrorAt(&parser.previous, msg); }
-
 static void ErrorAtCurrent(const char* msg) { ErrorAt(&parser.current, msg); }
 
 static void CompilerAdvance() {
@@ -472,6 +483,7 @@ static void CompilerInit(Compiler* compiler, KTN_ShikiType type, bool isStatic) 
     compiler->scopeDepth = 0;
     compiler->inFinally = false;
     compiler->parsedEntryPoint = false;
+    compiler->entryPoint = SyntheticToken("main");
     compiler->function = ShikiNew(parser.vm, NULL, type);
     current = compiler;
 
@@ -528,19 +540,6 @@ static void CompilerEndScope() {
         current->localCount--;
     }
 }
-
-static void CompilerExpression();
-static void CompilerStatement();
-static void CompilerDeclaration();
-static void VariableDeclaration();
-static void VariableSet(KTN_Token name, bool canAssign);
-static void VariableSetPrevious(bool canAssign);
-static ParseRule* CompilerGetRule(KTN_TokenType type);
-static void CompilerParsePrecedence(Precedence precedence);
-static void NamedVariable(KTN_Token name, bool canAssign);
-static KTN_Token SyntheticToken(const char* text);
-static void CompilerVariable(bool canAssign);
-static void RegisterTopLevelConst(KTN_Token name, KTN_Value value);
 
 static char* Substring(const char* string, int length) {
     KTN_VM* vm = parser.vm;
@@ -1055,6 +1054,11 @@ static void CompilerBinary(bool canAssign) {
 }
 
 static void CompilerCall(bool canAssign) {
+    if (current->parsedEntryPoint && IdentifiersEqual(&current->lastPrefixToken, &current->entryPoint)) {
+        ErrorAt(&current->entryPoint, "Cannot call an entry point (it will be automatically called for you)");
+        return;
+    }
+
     uint16_t argumentCounts = ArgumentList();
 
     uint8_t positionalCount = (argumentCounts >> 8) & 0xFF;
@@ -1337,7 +1341,6 @@ static int32_t ParseTypeAnnotation() {
         int32_t descriptorIndex = current->typeDescriptors[i].descriptorIndex;
 
         if (descriptorIndex < 0) {
-            // TODO: THIS SHOULD NEVER HAPPEN. Add error message heree.
             CompilerPanic("Cached descriptor index is negative. Invalid descriptors should not be cached.");
             continue;
         }
@@ -1345,7 +1348,6 @@ static int32_t ParseTypeAnnotation() {
         KTN_Value value = CurrentChunk()->constants.values[descriptorIndex];
         
         if (!IS_TYPE_DESCRIPTOR(value)) {
-            // TODO: THIS SHOULD NEVER HAPPEN. Add error message here.
             CompilerPanic("Cached descriptor index points to a non-descriptor value.");
             continue;
         }
@@ -1570,12 +1572,12 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
 
     current->function->signature = SignatureNew(
         parser.vm,
-        NULL,
         current->function->name,
         returnType,
         parameterSpecs,
         parameterSpecCount,
-        type
+        type,
+        NULL
     );
 
     // Emit OP_CHECK_PARAMS as the very first instruction if any params were
@@ -2095,7 +2097,7 @@ static void CompilerInitProperty(bool isPrivate, bool isHidden, bool isStatic, b
     CompilerAdvance();
 }
 
-static void ClassDeclaration() {
+static void ClassDeclaration(uint8_t type) {
     CompilerConsume(TOKEN_IDENTIFIER, "Expected kata name");
     KTN_Token className = parser.previous;
     uint32_t nameConstant = IdentifierConstant(&parser.previous);
@@ -2103,6 +2105,7 @@ static void ClassDeclaration() {
         DeclareVariable();
 
     CompilerEmitByteLong(OP_CLASS, nameConstant);
+    CompilerEmitByte(type);
     DefineVariable(nameConstant);
 
     ClassCompiler classCompiler;
@@ -2198,7 +2201,7 @@ static void ClassDeclaration() {
         }
 
         if (Match(TOKEN_CLASS)) {
-            ClassDeclaration();
+            ClassDeclaration(0);
             continue;
         }
 
@@ -2218,6 +2221,31 @@ static void ClassDeclaration() {
     currentClass = currentClass->enclosing;
 
     KTN_ScannerPopState();
+}
+
+static void SpecialClassDeclaration() {
+    KTN_Token previousToken = parser.previous;
+    uint8_t kataType = 0;
+
+    switch (previousToken.type) {
+        case TOKEN_ABSTRACT:    kataType = KTN_KATA_TYPE_ABSTRACT;  break;
+        case TOKEN_INTERFACE:   kataType = KTN_KATA_TYPE_INTERFACE; break;
+        case TOKEN_SEALED:      kataType = KTN_KATA_TYPE_SEALED;    break;
+        case TOKEN_EXTENSION:   kataType = KTN_KATA_TYPE_EXTENSION; break;
+        default: CompilerPanic("Unexpected token \"%d\" called SpecialClassDeclaration", previousToken.type);
+    }
+
+    if (kataType == KTN_KATA_TYPE_ABSTRACT && Match(TOKEN_FINAL)) {
+        kataType |= KTN_KATA_TYPE_FINAL;
+    } else if (kataType == KTN_KATA_TYPE_SEALED) {
+        if (Match(TOKEN_ABSTRACT)) {
+            kataType |= KTN_KATA_TYPE_ABSTRACT;
+        } else if (Match(TOKEN_INTERFACE)) {
+            kataType |= KTN_KATA_TYPE_INTERFACE;
+        }
+    }
+
+    ClassDeclaration(kataType);
 }
 
 static void FunctionDeclaration() {
@@ -2250,6 +2278,7 @@ static void EntryDeclaration() {
     uint32_t global = ParseVariable("Expected shiki name");
     MarkInitialized();
     current->parsedEntryPoint = true;
+    current->entryPoint = parser.previous;
     CompilerFunction(TYPE_ENTRY, false);
     DefineVariable(global);
 }
@@ -2939,6 +2968,7 @@ static void StatementTry() {
     CompilerPatchJump(overCatchJump);
 
     currentTry = tryContext.enclosing;
+    printf("currentTry = tryContext.enclosing: %p\n", currentTry);
 
     if (Match(TOKEN_FINALLY)) {
         CompilerPatchJump(beginFinallyOffset);
@@ -2996,6 +3026,10 @@ static void CompilerSynchronize() {
             case TOKEN_VAR:
             case TOKEN_CONST:
             case TOKEN_FINAL:
+            case TOKEN_ABSTRACT:
+            case TOKEN_INTERFACE:
+            case TOKEN_SEALED:
+            case TOKEN_EXTENSION:
             case TOKEN_IMPORT:
             case TOKEN_USING:
 
@@ -3028,7 +3062,7 @@ static void CompilerSynchronize() {
 
 static void CompilerDeclaration() {
     if (Match(TOKEN_CLASS))
-        ClassDeclaration();
+        ClassDeclaration(0);
     else if (Match(TOKEN_FUNCTION))
         FunctionDeclaration();
     else if (Match(TOKEN_ENTRY))
@@ -3037,6 +3071,8 @@ static void CompilerDeclaration() {
         ConstDeclaration();
     else if (Match(TOKEN_FINAL))
         FinalDeclaration();
+    else if (Match(TOKEN_ABSTRACT) || Match(TOKEN_INTERFACE) || Match(TOKEN_SEALED) || Match(TOKEN_EXTENSION))
+        SpecialClassDeclaration();
     else if (Match(TOKEN_VAR))
         VariableDeclaration();
     else
@@ -3656,6 +3692,7 @@ ParseRule rules[] = {
 static void CompilerParsePrecedence(Precedence precedence) {
     CompilerAdvance();
 
+    current->lastPrefixToken = parser.previous;
     ParseFn prefixRule = CompilerGetRule(parser.previous.type)->prefix;
 
     if (prefixRule == NULL) {
