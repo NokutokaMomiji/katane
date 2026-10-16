@@ -18,43 +18,6 @@ typedef struct {
     int count;
 } VisitedSet;
 
-static KTN_MAYBE_UNUSED const char* KTN_WellKnownNameText[KTN_NAME_COUNT] = {
-    "init",
-    "toString",
-    "equals",
-    "hashCode",
-    "compare",
-    "dispose",
-    "suppressedErrors",
-    "message",
-    "stackTrace",
-    "expected",
-    "actual",
-    "value",
-    "values",
-    "name",
-    "ordinal",
-    "minimum",
-    "maximum",
-    "argumentName",
-    "operation",
-    "target",
-    "propertyName",
-    "key",
-    "index",
-    "moduleName",
-    "iterator",
-    "moveNext",
-    "current",
-    "keys",
-    "entries",
-    "chars",
-    "bytes",
-    "runes",
-    "next",
-    "done"
-};
-
 static bool VisitedContains(VisitedSet* vs, KTN_Object* obj) {
     for (int i = 0; i < vs->count; i++)
         if (vs->items[i] == obj)
@@ -503,8 +466,6 @@ KTN_ObjShiki* ShikiNew(KTN_VM* vm, KTN_ObjModule* module, KTN_ShikiType type) {
     newFunction->upvalueCount = 0;
     newFunction->module = module;
     newFunction->returnTypeDescriptor = -1;
-
-    newFunction->docs = NULL;
     newFunction->signature = NULL;
 
     KTN_ChunkInit(&newFunction->chunk);
@@ -512,22 +473,23 @@ KTN_ObjShiki* ShikiNew(KTN_VM* vm, KTN_ObjModule* module, KTN_ShikiType type) {
     return newFunction;
 }
 
-KTN_ObjNative* NativeNew(KTN_VM* vm, NativeFnEx function, const char* name, const char* signature, const char* docs) {
+KTN_ObjNative* NativeNew(KTN_VM* vm, NativeFnEx function, const char* name, KTN_ObjSignature* signature) {
     KTN_ObjNative* newNative = ALLOCATE_OBJ(KTN_ObjNative, OBJ_NATIVE);
     
     newNative->name = name;
     newNative->type = TYPE_FUNCTION;
     newNative->function = function;
     newNative->signature = signature;
-    newNative->docs = docs;
 
     return newNative;
 }
 
-KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString* name, KTN_ObjTypeDescriptor* returnType, const KTN_SignatureParameterSpec* parameters, int parameterCount, KTN_ShikiType shikiType) {
+KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* name, KTN_ObjTypeDescriptor* returnType, const KTN_SignatureParameterSpec* parameters, int parameterCount, KTN_ShikiType shikiType, KTN_ObjString* docs) {
     KTN_ObjSignature* signature = ALLOCATE_OBJ(KTN_ObjSignature, OBJ_SIGNATURE);
 
-    signature->display = display;
+    // TODO: Remove, maybe? It has to be generated from the signature now instead.
+    // We can keep it as a cache.
+    signature->display = NULL;
     signature->name = name;
     signature->returnType = returnType;
     signature->parameterCount = parameterCount;
@@ -536,6 +498,7 @@ KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString
     signature->positionalCount = 0;
     signature->hasVariadic = false;
     signature->namedStart = parameterCount;
+    signature->docs = docs;
 
     Push(vm, OBJECT_VALUE(signature));
 
@@ -548,20 +511,23 @@ KTN_ObjSignature* SignatureNew(KTN_VM* vm, KTN_ObjString* display, KTN_ObjString
 
             destinationParameter->name = STRING_COPY(vm, specParameter->start, specParameter->length);
             destinationParameter->type = specParameter->type;
-            destinationParameter->hasDefaultValue = specParameter->hasDefaultValue;
-            destinationParameter->isNamed = specParameter->isNamed;
             destinationParameter->kind = specParameter->kind;
             destinationParameter->defaultValue = specParameter->defaultValue;
             destinationParameter->defaultIsImmutable = specParameter->defaultIsImmutable;
             
             if (destinationParameter->kind != KTN_PARAM_POSITIONAL) {
-                signature->hasVariadic |= (destinationParameter->kind == KTN_PARAM_NAMED);
+                signature->hasVariadic |= (destinationParameter->kind == KTN_PARAM_VARIADIC);
                 continue;
             }
 
             signature->positionalCount++;
         }
 
+        /*
+            Cases:
+                1. shiki func(a, b, {c}) -> 0: a, 1: b, 2: c -> 2 == positionalCount (2)
+                2. shiki func(a, b, ...c, {d}) -> 0: a, 1: n, 2: ...c, 3: d -> 3 == positionalCount (2) + 1
+        */
         signature->namedStart = (signature->hasVariadic) ? signature->positionalCount + 1 : signature->positionalCount;
     }
 
@@ -600,33 +566,6 @@ static KTN_ObjString* StringAllocate(KTN_VM* vm, char* chars, int length, uint32
     return string;
 }
 
-//  FNV-1a Hashing.
-static uint32_t StringHash(const char* key, int length) {
-    uint32_t hash = 2166136261u;
-
-    int step = 1;
-
-    if (length > 256) {
-        // Bitshifting to the left 'n' spaces is akin to dividing by 2^n.
-        // This divides the string into 128 intervals. 
-        // Helpful when you have... say... a **2 million lines JSON file**
-        step = (length >> 7) | 1;
-    }
-
-    for (int i = 0; i < length; i += step) {
-        hash ^= (uint8_t)key[i];
-        hash *= 16777619;
-    }
-
-    hash ^= hash >> 16;
-    hash *= 0x21f0aaadU;
-    hash ^= hash >> 15;
-    hash *= 0x735a2d97U;
-    hash ^= hash >> 15;
-
-    return hash;
-}
-
 KTN_ObjString* StringTake(KTN_VM* vm, char* chars, int length, bool intern) {
     uint32_t hash = StringHash(chars, length);
     KTN_ObjString* interned = TableFindString(&vm->strings, chars, length, hash);
@@ -662,16 +601,16 @@ KTN_ObjUpvalue* UpvalueNew(KTN_VM* vm, KTN_Value* slot) {
     return Upvalue;
 }
 
-KTN_ObjArray* ArrayNew(KTN_VM* vm) {
+KTN_ObjArray* ArrayNew(KTN_VM* vm, size_t initialSize) {
     KTN_ObjArray* array = ALLOCATE_OBJ(KTN_ObjArray, OBJ_ARRAY);
-    ValueArrayInit(&array->items);
+    ValueArrayInit(&array->items, initialSize);
     return array;
 }
 
-KTN_ObjMap* MapNew(KTN_VM* vm) {
+KTN_ObjMap* MapNew(KTN_VM* vm, size_t initialSize) {
     KTN_ObjMap* map = ALLOCATE_OBJ(KTN_ObjMap, OBJ_MAP);
 
-    KTN_HashMapInit(&map->map);
+    KTN_HashMapInit(&map->map, initialSize);
 
     return map;
 }
@@ -705,7 +644,7 @@ KTN_ObjKata* KataNew(KTN_VM* vm, KTN_ObjString* name) {
     KTN_ObjKata* kata = ALLOCATE_OBJ(KTN_ObjKata, OBJ_CLASS);
     kata->className = name;
 
-    ValueArrayInit(&kata->methodNames);
+    ValueArrayInit(&kata->methodNames, 0);
 
     TableInit(&kata->methods);
     TableInit(&kata->properties);
@@ -728,6 +667,7 @@ KTN_ObjKata* KataNew(KTN_VM* vm, KTN_ObjString* name) {
 
     kata->typeParameterCount = 0;
     kata->overloadMask = 0;
+    kata->kataType = 0;
     kata->hasTypedFields = false;
     kata->optionalGenerics = false;
     kata->privateConstructor = false;
@@ -741,7 +681,7 @@ KTN_ObjKata* KataNew(KTN_VM* vm, KTN_ObjString* name) {
 KTN_ObjInstance* InstanceNew(KTN_VM* vm, KTN_ObjKata* classObj) {
     KTN_ObjInstance* instance = ALLOCATE_OBJ(KTN_ObjInstance, OBJ_INSTANCE);
     instance->kata = classObj;
-    ValueArrayInit(&instance->propertyNames);
+    ValueArrayInit(&instance->propertyNames, 0);
     TableInit(&instance->properties);
     instance->typeArguments = NULL;
     TableAddAll(vm, &classObj->properties, &instance->properties);

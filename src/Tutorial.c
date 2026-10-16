@@ -225,7 +225,7 @@ typedef enum { LS_TODO, LS_DONE, LS_SKIPPED } LessonStatus;
 
 typedef struct {
     LessonStatus status;
-    char* userCode;   // Allocated via malloc. NULL means use default.
+    char* userCode;
 } LessonState;
 
 static LessonState* lessonState = NULL;

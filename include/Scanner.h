@@ -1,7 +1,7 @@
 #ifndef KATANE_SCANNER_H
 #define KATANE_SCANNER_H
 
-#include "Chunk.h"
+#include "Common.h"
 
 typedef enum {
     TOKEN_PARENTHESIS_OPEN,
@@ -70,6 +70,10 @@ typedef enum {
     TOKEN_STATIC,
     TOKEN_CONST,
     TOKEN_FINAL,
+    TOKEN_ABSTRACT,
+    TOKEN_INTERFACE,
+    TOKEN_EXTENSION,
+    TOKEN_SEALED,
     TOKEN_PRIVATE,
     TOKEN_HIDDEN,
     TOKEN_GET,

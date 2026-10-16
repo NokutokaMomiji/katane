@@ -1,8 +1,5 @@
-#include <stdio.h>
-
 #include "Array.h"
 #include "VM.h"
-#include "Utilities.h"
 
 inline void KTN_ArrayAdd(KTN_VM* vm, KTN_ObjArray* array, KTN_Value value) {
     Push(vm, value);
@@ -54,6 +51,7 @@ bool KTN_ArrayGet(KTN_ObjArray* array, KTN_Value index, KTN_Value* value) {
         return false;
 
     int i = (int)AS_INT(index);
+    
     i = (i < 0) ? array->items.count + i : i;
 
     if (i < 0 || i >= array->items.count)
@@ -64,7 +62,7 @@ bool KTN_ArrayGet(KTN_ObjArray* array, KTN_Value index, KTN_Value* value) {
 }
 
 // Slicing: end index is exclusive (Python-style). Step defaults to 1.
-// [start:end:step] — null start = 0, null end = array length.
+// [start:end:step] -> null start = 0, null end = array length.
 bool KTN_ArrayGetRange(KTN_VM* vm, KTN_ObjArray* array, KTN_Value min, KTN_Value max, KTN_Value step, KTN_Value* value) {
     if ((!IS_INT(min) && !IS_NULL(min)) || (!IS_INT(max) && !IS_NULL(max)))
         return false;
@@ -88,7 +86,7 @@ bool KTN_ArrayGetRange(KTN_VM* vm, KTN_ObjArray* array, KTN_Value min, KTN_Value
         rangeMax = tmp - 1;
     }
 
-    KTN_ObjArray* newArray = ArrayNew(vm);
+    KTN_ObjArray* newArray = ArrayNew(vm, (rangeMax - rangeMin) / 10);
 
     if (Step > 0) {
         for (int i = rangeMin; i < rangeMax; i += Step)

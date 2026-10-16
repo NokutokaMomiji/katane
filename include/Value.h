@@ -130,7 +130,7 @@ typedef struct {
     KTN_Value* values;       // Elements.
 } KTN_ValueArray;
 
-void ValueArrayInit(KTN_ValueArray* array);
+void ValueArrayInit(KTN_ValueArray* array, size_t initialSize);
 void ValueArrayWrite(KTN_VM* vm, KTN_ValueArray* array, KTN_Value value);
 KTN_Value* ValueArrayGet(KTN_ValueArray* array, int position);
 void ValueArrayFree(KTN_VM* vm, KTN_ValueArray* array);

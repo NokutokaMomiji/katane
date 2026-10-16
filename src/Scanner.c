@@ -2,11 +2,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "Common.h"
 #include "Scanner.h"
 #include "Config.h"
 #include "Utilities.h"
-#include "Memory.h"
 
 #define SCANNER_STATE_STACK_MAX 64
 

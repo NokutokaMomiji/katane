@@ -7,6 +7,33 @@
 #include "Memory.h"
 #include "Utf8.h"
 
+//  FNV-1a Hashing.
+uint32_t StringHash(const char* key, int length) {
+    uint32_t hash = 2166136261u;
+
+    int step = 1;
+
+    if (length > 256) {
+        // Bitshifting to the left 'n' spaces is akin to dividing by 2^n.
+        // This divides the string into 128 intervals. 
+        // Helpful when you have... say... a **2 million lines JSON file**
+        step = (length >> 7) | 1;
+    }
+
+    for (int i = 0; i < length; i += step) {
+        hash ^= (uint8_t)key[i];
+        hash *= 16777619;
+    }
+
+    hash ^= hash >> 16;
+    hash *= 0x21f0aaadU;
+    hash ^= hash >> 15;
+    hash *= 0x735a2d97U;
+    hash ^= hash >> 15;
+
+    return hash;
+}
+
 bool IsDigit(char digit) {
     return (digit >= '0' && digit <= '9');
 }

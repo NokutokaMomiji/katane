@@ -45,6 +45,7 @@ endif()
 target_compile_definitions(katane PRIVATE
     $<$<CONFIG:Debug>:DEBUG_TRACE_EXECUTION>
     $<$<CONFIG:Debug>:DEBUG_PRINT_CODE>
+    $<$<CONFIG:Debug>:DEBUG_LOG_GC>
 )
 
 target_compile_options(katane PRIVATE

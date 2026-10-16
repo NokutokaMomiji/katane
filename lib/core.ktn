@@ -1,0 +1,424 @@
+/*
+    core.ktn
+    Nokutoka Momiji
+
+    In the future, the file that defines the standard library of Katane.
+    Or at least, the signatures. This would make it easy to create signatures for shikis.
+
+    External shikis and katas are assumed to be created internally by the C code and defined there.
+*/
+
+/// A whole number.
+kata Int {
+    external shiki abs(): Int;
+    external shiki gcd(other: Int): Int;
+    external shiki lcm(other: Int): Int;
+    external shiki modPow(exponent: Int, modulus: Int): Int;
+    external shiki modInverse(modulus: Int): Int;
+
+    external shiki toFloat(): Float;
+    external shiki toString({radix: Int = 10}): String;
+
+    external shiki compareTo(other: Int): Int;
+    external shiki clamp(low: Int, high: Int): Int;
+
+    external get sign: Int;
+    external get isEven: Bool;
+    external get isOdd: Bool;
+    external get isNegative: Bool;
+    external get isZero: Bool;
+    external get bitLength: Int;
+    external static get maxValue: Int;
+    external static get minValue: Int;
+}
+
+
+/// A floating point number.
+kata Float {
+    external shiki abs(): Float;
+    external shiki ceil(): Int;
+    external shiki floor(): Int;
+    external shiki round(): Int;
+    external shiki truncate(): Int;
+    external shiki pow(exponent: Float): Float;
+    external shiki sqrt(): Float;
+
+    external shiki remainder(other: Float): Float;
+
+    external shiki toStringAsFixed(fractionDigits: Int): String;
+    external shiki toStringAsExponential({fractionDigits: Int = 0}): String;
+    external shiki toStringAsPrecision(precision: Int): String;
+
+    external shiki compareTo(other: Float): Int;
+    external shiki clamp(low: Float, high: Float): Float;
+
+    external get sign: Float;
+    external get isNegative: Bool;
+    external get isFinite: Bool;
+    external get isInfinite: Bool;
+    external get isNaN: Bool;
+    external static get infinity: Float;
+    external static get negativeInfinity: Float;
+    external static get nan: Float;
+    external static get maxValue: Float;
+    external static get minValue: Float;
+}
+
+/// `true` or `false`.
+kata Bool {
+    external shiki toString(): String;
+}
+
+/// An interface for basic searches within strings.
+interface kata Pattern {
+    shiki allMatches(string: String, start: Int = 0): Iterable<Match>;
+    shiki matchAsPrefix(string: String, start: Int = 0): Match?;
+}
+
+/// Represetns a string matched by a given group.
+interface kata Match {
+    shiki group(group: Int): String?;
+    shiki operator[](group: Int): String?;
+    shiki groups(groupIndices: Array<Int>): Array<String?>;
+
+    get start: Int;
+    get end: Int;
+    get groupCount: Int;
+    get input: String;
+    get pattern: Pattern;
+}
+
+/// The specification of a range index (i.e. `x[1:3]`, `x[:8]`, `x[2:]`, `x[1:10:2]`).
+/// 
+/// A `null` field means "not specified":
+///     - `start == null`:  From the beginning.
+///     - `end == null`:    To the end.
+///     - `step == null`:   Step by 1.
+///
+///```katane
+///     x[1:5]          Slice(1, 5, null)
+///     x[:3]           Slice(null, 3, null)
+///     x[2:]           Slice(2, null, null)
+///     x[1:10:2]       Slice(1, 10, 2)
+/// ```
+kata Slice {
+    final mochi start: Int?;
+    final mochi end: Int?;
+    final mochi step: Int?;
+
+    Slice(this.start, this.end, this.step);
+    
+    shiki toString(): String => "Range(${this.start}, ${this.end}, ${this.step})";
+}
+
+interface kata Encoder<I, S> {
+    shiki encode(data: I): S;
+    shiki name(): String;
+}
+
+interface kata Decoder<I, S> {
+    shiki decode(data: I): S;
+    shiki decodePartial(data: I): S;
+    shiki reset();
+    shiki name(): String;
+}
+
+/// 
+kata TextEncoder : Encoder<String, Bytes> {
+    external static get UTF8;
+}
+
+kata TextDecoder : Decoder<Bytes, String> {
+    external static get UTF8;
+}
+
+kata Encoding {
+    private mochi _decoder: Decoder;
+    private mochi _encoder: Encoder;
+    
+    Encoding(decoder: Decoder, encoder: Encoder) {
+        this._decoder = decoder;
+        this._encoder = encoder;
+    }
+    
+    shiki decode(bytes: Bytes): String => this._decoder.decode(bytes);
+    shiki encode(str: String): Bytes => this._encoder.encode(str);
+    
+    get decoder: Decoder => this._decoder;
+    get encoder: Encoder => this._encoder;
+    get name: String => this._decoder.name();
+}
+
+/// An immutable sequence of characters.
+kata String : Pattern {
+    external static shiki fromCharCode(codePoint: Int): String;
+    external static shiki fromCharCodes(codes: Iterable): String;
+    external static shiki join(parts: Iterable, separator: String = ""): String;
+
+    external shiki codeunitAt(index: Int): Int;
+    external shiki codepointAt(index: Int): Int;
+
+    external shiki concatenate(other: String): String;
+    external shiki repeat(count: Int): String;
+
+    external shiki contains(pattern: Pattern): Bool;
+    external shiki startsWith(prefix: String): Bool;
+    external shiki endsWith(suffix: String): Bool;
+    external shiki indexOf(pattern: Pattern, {start: Int = 0}): Int;
+    external shiki lastIndexOf(pattern: Pattern, {start: Int = -1}): Int;
+
+    external shiki substring(start: Int, {end: Int = -1}): String;
+    external shiki slice(slice: Slice): String;
+    external shiki trim(): String;
+    external shiki trimLeft(): String;
+    external shiki trimRight(): String;
+
+    external shiki padLeft(width: Int, {padding: String = ' '}): String;
+    external shiki padRight(width: Int, {padding: String = ' '}): String;
+
+    external shiki split(pattern: Pattern): Array;
+    external shiki splitLines(): Array;
+    
+    external shiki replaceAll(from: String, to: String): String;
+    external shiki replaceFirst(from: String, to: String): String;
+    external shiki replaceRange(start: Int, end: Int, replacement: String): String;
+    
+    external shiki toLowerCase(): String;
+    external shiki toUpperCase(): String;
+    external shiki capitalize(): String;
+    
+    external shiki toBytes({encoder: TextEncoder = TextEncoder.UTF8}): Bytes;
+    external shiki toString(): String;
+    external shiki toInt({radix: Int = 10}): Int?;
+    external shiki toFloat(): Float?;
+    
+    external shiki compareTo(other: String): Int;
+    
+    external shiki operator[](index: Int | Slice): String;
+    external shiki operator+(other: String): String;
+    external shiki operator*(times: Int): String;
+    external shiki operator==(other): Bool;
+    
+    external get length: Int;
+    external get isEmpty: Bool;
+    external get isNotEmpty: Bool;
+    external get chars: Iterable<String>;
+}
+
+kata Bytes {
+    external shiki operator[](index: Int | Slice): Bytes;
+}
+
+enum BufferType {
+    grow,
+    fixed,
+    wrap
+};
+
+enum Endianness {
+    little,
+    big
+};
+
+kata Buffer {
+    external Buffer({
+        size: Int = 0,
+        type: BufferType = BufferType.grow,
+        endianness: Endianness = Endianness.little
+    });
+
+    external shiki reserve(size: Int);
+    external shiki shrink();
+
+    external shiki writeU8(value: Int);
+    external shiki writeS8(value: Int);
+    external shiki writeU16(value: Int);
+    external shiki writeS16(value: Int);
+    external shiki writeU32(value: Int);
+    external shiki writeS32(value: Int);
+    external shiki writeFloat(value: Float);
+    external shiki writeDouble(value: Float);
+    external shiki writeString(value: String);
+
+    external shiki readU8(): Int;
+    external shiki readS8(): Int;
+    external shiki readU16(): Int;
+    external shiki readS16(): Int;
+    external shiki readU32(): Int;
+    external shiki readS32(): Int;
+    external shiki readFloat(): Float;
+    external shiki readDouble(): Float;
+    external shiki readString(): String;
+
+    external shiki toBytes(): Bytes;
+    external static shiki fromBytes(bytes: Bytes);
+    
+    external shiki copy(): Buffer;
+
+    external get length: Int;
+    external get capacity: Int;
+    external get type: BufferType;
+    external get endianness: Endianness;
+}
+
+/// The type of `null`.
+kata Null {
+    external shiki toString(): String;
+}
+
+/// The common interface shared by Array, String, Map, Generator, and
+/// anything else that can produce values one at a time.
+kata Iterable {
+    external shiki iterator(): Iterator;
+    external shiki forEach(function: Shiki(value): Null): Null;
+
+    external shiki map(function: Shiki(value)): Iterable;
+    external shiki where(function: Shiki(value): Bool): Iterable;
+    external shiki expand(function: Shiki(value): Iterable): Iterable;
+
+    external shiki reduce(function: Shiki(accumulator, value));
+    external shiki fold(initial, function: Shiki(accumulator, value));
+
+    external shiki any(function: Shiki(value): Bool): Bool;
+    external shiki every(function: Shiki(value): Bool): Bool;
+    external shiki contains(value): Bool;
+
+    external shiki skip(count: Int): Iterable;
+    external shiki take(count: Int): Iterable;
+    external shiki skipWhile(function: Shiki(value): Bool): Iterable;
+    external shiki takeWhile(function: Shiki(value): Bool): Iterable;
+
+    external shiki toArray(): Array;
+    external shiki toList(): Array;
+    external shiki join({separator: String = ""}): String;
+
+    external get length: Int;
+    external get isEmpty: Bool;
+    external get isNotEmpty: Bool;
+    external get first;
+    external get last;
+    external get single;
+}
+
+/// An ordered, growable list of values.
+kata Array : Iterable {
+    external static shiki filled(length: Int, fill, {growable: Bool = false}): Array;
+    external static shiki empty({growable: Bool = false}): Array;
+    external static shiki from(elements: Iterable, {growable: Bool = true}): Array;
+    external static shiki of(elements: Iterable, {growable: Bool = true}): Array;
+    external static shiki generate(length: Int, generator: Generator | Shiki(index: Int), {growable: Bool = true}): Array;
+    external static shiki unmodifiableOf(elements: Iterable): Array;
+    external static shiki range(start: Int, end: Int, {step: Int = 1}): Array;
+
+    external shiki add(value): Null;
+    external shiki addAll(iterable: Iterable): Null;
+    external shiki insert(index: Int, value): Null;
+    external shiki insertAll(index: Int, iterable: Iterable): Null;
+    external shiki remove(value): Bool;
+    external shiki removeAt(index: Int);
+    external shiki removeLast();
+    external shiki removeWhere(function: Shiki(value): Bool): Null;
+    external shiki clear(): Null;
+    external shiki fillRange(start: Int, end: Int, {value = null}): Null;
+    external shiki sort({compare: Shiki(first, second): Int = null}): Null;
+    external shiki shuffle(): Null;
+    external shiki reverse(): Null;
+
+    external shiki indexOf(value, {start: Int = 0}): Int;
+    external shiki lastIndexOf(value, {start: Int = -1}): Int;
+    external shiki indexWhere(function: Shiki(value): Bool, {start: Int = 0}): Int;
+    external shiki sublist(start: Int, {end: Int = -1}): Array;
+    external shiki slice(slice: Slice): Array;
+    external shiki clone(): Array;
+
+    external shiki operator[](index: Int | Slice);
+    external shiki operator[]=(index: Int, value): Null;
+    external shiki operator+(other: Array): Array;
+
+    external set first(value);
+    external set last(value);
+
+    external get first;
+    external get last;
+    external get length: Int;
+    external get reversed: Iterable;
+    external get isEmpty: Bool;
+    external get isNotEmpty: Bool;
+    external get growable: Bool;
+}
+
+/// An iterator over an Iterable.
+kata Iterator {
+    external shiki moveNext(): Bool;
+    external get current;
+    external get done: Bool;
+}
+
+/// A collection of key / value pairs.
+kata Map {
+    external static shiki from(entries: Iterable): Map;
+    external static shiki of(entries: Iterable): Map;
+    external static shiki empty(): Map;
+    external static shiki unmodifiable(entries: Map): Map;
+
+    external shiki containsKey(key): Bool;
+    external shiki containsValue(value): Bool;
+    external shiki get(key, {defaultValue = null});
+
+    external shiki putIfAbsent(key, function: Shiki());
+    external shiki remove(key);
+    external shiki clear(): Null;
+    external shiki addAll(other: Map): Null;
+    external shiki update(key, function: Shiki(value));
+    external shiki updateAll(function: Shiki(key, value)): Null;
+
+    external shiki forEach(function: Shiki(key, value): Null): Null;
+    external shiki map(function: Shiki(key, value)): Map;
+    external shiki where(function: Shiki(key, value): Bool): Map;
+
+    external shiki toArray(): Array;
+    external shiki clone(): Map;
+
+    external shiki operator[](key);
+    external shiki operator[]=(key, value): Null;
+
+    external get length: Int;
+    external get isEmpty: Bool;
+    external get isNotEmpty: Bool;
+    external get keys: Array;
+    external get values: Array;
+    external get entries: Array;
+}
+
+// Starting from here, this is more theoretical, but not a full idea.
+// Gets too much into "reflection" territory.
+
+/// A shiki (function) value.
+kata Shiki {
+    external shiki call(...args);
+    external shiki apply(args: Array);
+    external shiki bind(receiver): Shiki;
+
+    external get name: String?;
+    external get signature: Signature;
+    external get arity: Int;
+    external get parameters: Array;
+    external get returnType: Type?;
+    external get isNative: Bool;
+}
+
+/// A kata (class) value.
+kata Kata {
+    external shiki newInstance(...args);
+
+    external get name: String;
+    external get sokata: Kata?;
+    external get methods: Array;
+    external get fields: Array;
+    external get constructor: Shiki?;
+    external get isAbstract: Bool;
+    external get isFinal: Bool;
+
+    external shiki isInstanceOf(object): Bool;
+    external shiki isSubkataOf(other: Kata): Bool;
+}

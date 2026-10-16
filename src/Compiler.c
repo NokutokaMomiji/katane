@@ -1,4 +1,6 @@
 #include <limits.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +12,7 @@
 #include "Common.h"
 #include "Debug.h"
 #include "Memory.h"
+#include "Object.h"
 #include "Scanner.h"
 #include "Utilities.h"
 #include "Config.h"
@@ -57,10 +60,7 @@ typedef struct {
 typedef struct {
     KTN_Token name;
     int depth;
-
-    int32_t typeDescriptorIndex; // -1 if there is no type. Otherwise, the index
-                                                              // in the constant table.
-
+    int32_t typeDescriptorIndex;
     bool isCaptured;
     bool isFinal;
     bool isAssigned;
@@ -111,6 +111,8 @@ typedef struct Compiler {
 
     bool inFinally;
     bool parsedEntryPoint;
+    KTN_Token entryPoint;
+    KTN_Token lastPrefixToken;
 } Compiler;
 
 typedef struct ClassCompiler {
@@ -153,6 +155,19 @@ ClassCompiler* currentClass = NULL;
 BreakableContext* currentBreakable = NULL;
 TryContext* currentTry = NULL;
 bool collectOnly = false;
+
+static void CompilerExpression();
+static void CompilerStatement();
+static void CompilerDeclaration();
+static void VariableDeclaration();
+static void VariableSet(KTN_Token name, bool canAssign);
+static void VariableSetPrevious(bool canAssign);
+static ParseRule* CompilerGetRule(KTN_TokenType type);
+static void CompilerParsePrecedence(Precedence precedence);
+static void NamedVariable(KTN_Token name, bool canAssign);
+static KTN_Token SyntheticToken(const char* text);
+static void CompilerVariable(bool canAssign);
+static void RegisterTopLevelConst(KTN_Token name, KTN_Value value);
 
 static KTN_Chunk* CurrentChunk() { return &current->function->chunk; }
 
@@ -301,7 +316,6 @@ static void ErrorAt(KTN_Token* token, const char* msg) {
 }
 
 static void Error(const char* msg) { ErrorAt(&parser.previous, msg); }
-
 static void ErrorAtCurrent(const char* msg) { ErrorAt(&parser.current, msg); }
 
 static void CompilerAdvance() {
@@ -469,6 +483,7 @@ static void CompilerInit(Compiler* compiler, KTN_ShikiType type, bool isStatic) 
     compiler->scopeDepth = 0;
     compiler->inFinally = false;
     compiler->parsedEntryPoint = false;
+    compiler->entryPoint = SyntheticToken("main");
     compiler->function = ShikiNew(parser.vm, NULL, type);
     current = compiler;
 
@@ -525,19 +540,6 @@ static void CompilerEndScope() {
         current->localCount--;
     }
 }
-
-static void CompilerExpression();
-static void CompilerStatement();
-static void CompilerDeclaration();
-static void VariableDeclaration();
-static void VariableSet(KTN_Token name, bool canAssign);
-static void VariableSetPrevious(bool canAssign);
-static ParseRule* CompilerGetRule(KTN_TokenType type);
-static void CompilerParsePrecedence(Precedence precedence);
-static void NamedVariable(KTN_Token name, bool canAssign);
-static KTN_Token SyntheticToken(const char* text);
-static void CompilerVariable(bool canAssign);
-static void RegisterTopLevelConst(KTN_Token name, KTN_Value value);
 
 static char* Substring(const char* string, int length) {
     KTN_VM* vm = parser.vm;
@@ -618,11 +620,23 @@ static bool EvaluateCompiledExpression(KTN_Value* value) {
             return true;
         }
 
+        case TOKEN_INTERPOLATION: {
+            // TODO: Maybe support interpolation in the future? If all values are const and all?
+            return false;
+        }
+
         case TOKEN_STRING: {
             CompilerAdvance();
+            bool isInterpolation = (parser.previous.type == TOKEN_INTERPOLATION);
+
             const char* start = parser.previous.start + 1;
-            int length = parser.previous.length - 2;
+            int length = (isInterpolation) ? parser.previous.length - 1 : parser.previous.length - 2;
             
+            if (parser.previous.isRaw) {
+                *value = OBJECT_VALUE(STRING_COPY(parser.vm, start, length));
+                return true;
+            }
+
             int outputLength = 0;
             char* decoded = ProcessEscapes(start, length, &outputLength);
 
@@ -694,7 +708,7 @@ static bool EvaluateCompiledExpression(KTN_Value* value) {
         case TOKEN_SQUARE_OPEN: {
             CompilerAdvance();
 
-            KTN_ObjArray* array = ArrayNew(parser.vm);
+            KTN_ObjArray* array = ArrayNew(parser.vm, 0);
             Push(parser.vm, OBJECT_VALUE(array));
 
             if (Match(TOKEN_SQUARE_CLOSE)) {
@@ -731,7 +745,7 @@ static bool EvaluateCompiledExpression(KTN_Value* value) {
         case TOKEN_BRACKET_OPEN: {
             CompilerAdvance();
 
-            KTN_ObjMap* map = MapNew(parser.vm);
+            KTN_ObjMap* map = MapNew(parser.vm, 0);
             Push(parser.vm, OBJECT_VALUE(map));
 
             if (Match(TOKEN_BRACKET_CLOSE)) {
@@ -889,19 +903,57 @@ static void DefineVariable(uint32_t global) {
     CompilerEmitByteLong(OP_DEFINE_GLOBAL, global);
 }
 
-static uint8_t ArgumentList() {
+static uint16_t ArgumentList() {
     uint8_t argumentCount = 0;
+    uint8_t positionalCount = 0;
+    uint8_t namedCount = 0;
+
+    bool inNamedBlock = false;
+
     if (!Check(TOKEN_PARENTHESIS_CLOSE)) {
         do {
+            if (!inNamedBlock && Check(TOKEN_IDENTIFIER)) {
+                // Store state for lookahead.
+                KTN_ScannerPushState();
+                ParserSnapshot savedParser = ParserSaveState();
+
+                // Consume the identifier and check if it is succeeded by a colon ':'.
+                Match(TOKEN_IDENTIFIER);
+                inNamedBlock = Check(TOKEN_COLON);
+                
+                // Restore parser and scanner states.
+                ParserRestoreState(savedParser);
+                KTN_ScannerRestoreTopState();
+
+                // Remember to pop.
+                KTN_ScannerPopState();
+            }
+
+            if (inNamedBlock) {
+                CompilerConsume(TOKEN_IDENTIFIER, "Expected argument name in named block");
+                uint32_t nameConstant = IdentifierConstant(&parser.previous);
+                CompilerEmitByteLong(OP_CONSTANT_LONG, nameConstant);
+                CompilerConsume(TOKEN_COLON, "Expected ':' after argument name");
+            }
+
             CompilerExpression();
+
             if (argumentCount == 255)
                 Error("Cannot have more than 255 arguments in a shiki call");
+            
+            if (inNamedBlock) {
+                namedCount++;
+            } else {
+                positionalCount++;
+            }
+
             argumentCount++;
         } while (Match(TOKEN_COMMA));
     }
 
     CompilerConsume(TOKEN_PARENTHESIS_CLOSE, "Expected ')' after shiki call parameters");
-    return argumentCount;
+    
+    return (((uint16_t)positionalCount) << 8) | (uint16_t)namedCount;
 }
 
 static void CompilerAnd(bool canAssign) {
@@ -1002,8 +1054,24 @@ static void CompilerBinary(bool canAssign) {
 }
 
 static void CompilerCall(bool canAssign) {
-    uint8_t argumentCount = ArgumentList();
-    CompilerEmitBytes(OP_CALL, argumentCount);
+    if (current->parsedEntryPoint && IdentifiersEqual(&current->lastPrefixToken, &current->entryPoint)) {
+        ErrorAt(&current->entryPoint, "Cannot call an entry point (it will be automatically called for you)");
+        return;
+    }
+
+    uint16_t argumentCounts = ArgumentList();
+
+    uint8_t positionalCount = (argumentCounts >> 8) & 0xFF;
+    uint8_t namedCount = argumentCounts & 0xFF;
+
+    if (namedCount == 0) {
+        // OP_CALL <count>
+        CompilerEmitBytes(OP_CALL, positionalCount);
+    } else {
+        // OP_CALL <positionalCount> <namedCount>
+        CompilerEmitByte(OP_CALL_EX);
+        CompilerEmitShort(argumentCounts);
+    }
 }
 
 static void CompilerEmitOperand(int argument, bool isGlobal) {
@@ -1155,12 +1223,22 @@ static void CompilerDot(bool canAssign) {
         CompilerEmitByteLong(OP_SET_PROPERTY, name);
         parser.lastExpressionWasAssignment = true;
     } else if (Match(TOKEN_PARENTHESIS_OPEN)) {
-        uint8_t argumentCount = ArgumentList();
-        CompilerEmitByteLong(OP_INVOKE, name);
-        CompilerEmitByte(argumentCount);
+        uint16_t argumentCounts = ArgumentList();
+
+        uint8_t positionalCount = (argumentCounts >> 8) & 0xFF;
+        uint8_t namedCount = argumentCounts & 0xFF;
+
+        if (namedCount == 0) {
+            // OP_CALL <count>
+            CompilerEmitByteLong(OP_INVOKE, name);
+            CompilerEmitByte(positionalCount);
+        } else {
+            // OP_CALL <positionalCount> <namedCount>
+            CompilerEmitByteLong(OP_INVOKE_EX, name);
+            CompilerEmitShort(argumentCounts);
+        }
     } else {
-        ResolveExtraAssignments(OP_GET_PROPERTY, OP_SET_PROPERTY, name, true,
-                                                        nameToken);
+        ResolveExtraAssignments(OP_GET_PROPERTY, OP_SET_PROPERTY, name, true, nameToken);
     }
 }
 
@@ -1263,7 +1341,6 @@ static int32_t ParseTypeAnnotation() {
         int32_t descriptorIndex = current->typeDescriptors[i].descriptorIndex;
 
         if (descriptorIndex < 0) {
-            // TODO: THIS SHOULD NEVER HAPPEN. Add error message heree.
             CompilerPanic("Cached descriptor index is negative. Invalid descriptors should not be cached.");
             continue;
         }
@@ -1271,7 +1348,6 @@ static int32_t ParseTypeAnnotation() {
         KTN_Value value = CurrentChunk()->constants.values[descriptorIndex];
         
         if (!IS_TYPE_DESCRIPTOR(value)) {
-            // TODO: THIS SHOULD NEVER HAPPEN. Add error message here.
             CompilerPanic("Cached descriptor index points to a non-descriptor value.");
             continue;
         }
@@ -1340,10 +1416,27 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
 
     bool inNamedBlock = false;
     bool parsedVariadic = false;
+    bool hasSeenDefault = false;
+    /*
+        Function Parameters:
+            Katane supports three core types of parameters per function: positional, variadic, and named.
+            There are specific rules that are to be met that define which combinations are allowed.
+        Rules:
+        1. The order of parameters is always positional, variadic, named. Obviously, they are Optional
+            (i.e. You can have only positional, only variadic, only named, etc...)
+        2. You can only have a singular variadic parameter.
+        3. You cannot have positional parameters after the variadic parameter.
+        4. You cannot have positional parameters with no defaults after parameters with defaults.
+        5. You cannot have named parameters with no defaults after parameters with defaults.
+        6. Any parameter without a default value is a required parameter.
+        7. Named parameters cannot be variadic parameters. If you need one, ask for a Map instead.
+            (screw you tqdm and requests with your kwargs)
+    */
 
     // Consume all parameters. As mentioned beforehand, getters do not take parameters.
     if (!Check(TOKEN_PARENTHESIS_CLOSE) && type != TYPE_GETTER) {
         do {
+            // TODO: Remove arity on the function. The signature is all that's needed.
             current->function->arity++;
             if (current->function->arity > UINT8_MAX) {
                 ErrorAtCurrent("Cannot have more that 255 parameters for a shiki");
@@ -1352,48 +1445,69 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
             // Check if we have entered named parameters section.
             if (Check(TOKEN_BRACKET_OPEN)) {
                 if (type == TYPE_SETTER) {
-                    ErrorAtCurrent("Setters cannot have positional parameter");
+                    // i.e set property({value})
+                    ErrorAtCurrent("Setters cannot have named parameters");
                 }
 
                 if (inNamedBlock) {
+                    // If the '{' is in a valid expression, it will be consumed by the expression.
+                    // This is akin to: shiki func({{param})
                     ErrorAtCurrent("Unexpected '{'");
                 }
 
                 CompilerAdvance();
+
+                // Allows for new required named parameters.
+                // i.e. shiki func(a, b = true, {c, d = null})
+                if (inNamedBlock == false) {
+                    hasSeenDefault = false;
+                }
+                
                 inNamedBlock = true;
+            } else if (!inNamedBlock && parsedVariadic) {
+                // i.e. shiki func(a, b, ...c, d)
+                ErrorAtCurrent("Cannot have more positional parameters after the variadic parameter");
             }
 
-            if (Check(TOKEN_TRI_DOT)) {
+            bool triDotCheck = Match(TOKEN_TRI_DOT);
+
+            if (triDotCheck) {
+                // Blocks: shiki func({...params});
                 if (inNamedBlock) {
                     ErrorAtCurrent("Cannot have named variadic parameters");
                 }
+                
+                // Blocks: shiki func(...a, ...b);
+                if (parsedVariadic) {
+                    ErrorAtCurrent("Cannot have more than one variadic parameter");
+                }
+
                 parsedVariadic = true;
             }
 
             uint32_t Constant = ParseVariable("Expected parameter name");
             int parameterIndex = parameterSpecCount++;
+            KTN_SignatureParameterSpec* currentParameter = &parameterSpecs[parameterIndex];
 
-            parameterSpecs[parameterIndex].start = parser.previous.start;
-            parameterSpecs[parameterIndex].length = parser.previous.length;
-            parameterSpecs[parameterIndex].type = NULL;
-            parameterSpecs[parameterIndex].hasDefaultValue = false;
-            parameterSpecs[parameterIndex].isNamed = inNamedBlock;
-            parameterSpecs[parameterIndex].defaultValue = EMPTY_VALUE;
+            currentParameter->start = parser.previous.start;
+            currentParameter->length = parser.previous.length;
+            currentParameter->type = NULL;
+            currentParameter->kind = KTN_PARAM_POSITIONAL;
+            currentParameter->defaultValue = EMPTY_VALUE;
+            currentParameter->defaultIsImmutable = false;
+
+            if (triDotCheck) {
+                currentParameter->kind = KTN_PARAM_VARIADIC;
+            } else if (inNamedBlock) {
+                currentParameter->kind = KTN_PARAM_NAMED;
+            }
 
             if (Match(TOKEN_COLON)) {
                 int32_t descriptorIndex = ParseTypeAnnotation();
 
                 if (descriptorIndex >= 0) {
-                    char typeBuffer[512];
-                    KTN_TypeDescriptorFormat(
-                        AS_TYPE_DESCRIPTOR(
-                            CurrentChunk()->constants.values[descriptorIndex]
-                        ),
-                        typeBuffer,
-                        sizeof(typeBuffer)
-                    );
                     current->locals[current->localCount - 1].typeDescriptorIndex = descriptorIndex;
-                    parameterSpecs[parameterIndex].type = AS_TYPE_DESCRIPTOR(CurrentChunk()->constants.values[descriptorIndex]);
+                    currentParameter->type = AS_TYPE_DESCRIPTOR(CurrentChunk()->constants.values[descriptorIndex]);
                 }
             }
 
@@ -1402,7 +1516,7 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
                     ErrorAtCurrent("Setter parameter cannot have default value");
                 }
 
-                parameterSpecs[parameterIndex].hasDefaultValue = true;
+                hasSeenDefault = true;
                 
                 KTN_Value defaultValue;
 
@@ -1414,8 +1528,10 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
                     }
 
                     compiler->tempValues[compiler->tempValueCount] = defaultValue;
-                    parameterSpecs[parameterIndex].defaultValue = defaultValue;
+                    currentParameter->defaultValue = defaultValue;
                 }
+            } else if (hasSeenDefault) {
+                ErrorAtCurrent("Cannot have required parameters after optional parameters");
             }
 
             DefineVariable(Constant);
@@ -1443,11 +1559,6 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
         int32_t descriptorIndex = ParseTypeAnnotation();
 
         if (descriptorIndex >= 0) {
-            char typeBuffer[512];
-            KTN_TypeDescriptorFormat(
-                AS_TYPE_DESCRIPTOR(CurrentChunk()->constants.values[descriptorIndex]),
-                typeBuffer, sizeof(typeBuffer)
-            );
             current->returnDescriptorIndex = descriptorIndex;
             current->function->returnTypeDescriptor = (int)descriptorIndex;
         }
@@ -1461,12 +1572,12 @@ static void CompilerFunction(KTN_ShikiType type, bool isStatic) {
 
     current->function->signature = SignatureNew(
         parser.vm,
-        NULL,
         current->function->name,
         returnType,
         parameterSpecs,
         parameterSpecCount,
-        type
+        type,
+        NULL
     );
 
     // Emit OP_CHECK_PARAMS as the very first instruction if any params were
@@ -1986,7 +2097,7 @@ static void CompilerInitProperty(bool isPrivate, bool isHidden, bool isStatic, b
     CompilerAdvance();
 }
 
-static void ClassDeclaration() {
+static void ClassDeclaration(uint8_t type) {
     CompilerConsume(TOKEN_IDENTIFIER, "Expected kata name");
     KTN_Token className = parser.previous;
     uint32_t nameConstant = IdentifierConstant(&parser.previous);
@@ -1994,6 +2105,7 @@ static void ClassDeclaration() {
         DeclareVariable();
 
     CompilerEmitByteLong(OP_CLASS, nameConstant);
+    CompilerEmitByte(type);
     DefineVariable(nameConstant);
 
     ClassCompiler classCompiler;
@@ -2089,7 +2201,7 @@ static void ClassDeclaration() {
         }
 
         if (Match(TOKEN_CLASS)) {
-            ClassDeclaration();
+            ClassDeclaration(0);
             continue;
         }
 
@@ -2109,6 +2221,31 @@ static void ClassDeclaration() {
     currentClass = currentClass->enclosing;
 
     KTN_ScannerPopState();
+}
+
+static void SpecialClassDeclaration() {
+    KTN_Token previousToken = parser.previous;
+    uint8_t kataType = 0;
+
+    switch (previousToken.type) {
+        case TOKEN_ABSTRACT:    kataType = KTN_KATA_TYPE_ABSTRACT;  break;
+        case TOKEN_INTERFACE:   kataType = KTN_KATA_TYPE_INTERFACE; break;
+        case TOKEN_SEALED:      kataType = KTN_KATA_TYPE_SEALED;    break;
+        case TOKEN_EXTENSION:   kataType = KTN_KATA_TYPE_EXTENSION; break;
+        default: CompilerPanic("Unexpected token \"%d\" called SpecialClassDeclaration", previousToken.type);
+    }
+
+    if (kataType == KTN_KATA_TYPE_ABSTRACT && Match(TOKEN_FINAL)) {
+        kataType |= KTN_KATA_TYPE_FINAL;
+    } else if (kataType == KTN_KATA_TYPE_SEALED) {
+        if (Match(TOKEN_ABSTRACT)) {
+            kataType |= KTN_KATA_TYPE_ABSTRACT;
+        } else if (Match(TOKEN_INTERFACE)) {
+            kataType |= KTN_KATA_TYPE_INTERFACE;
+        }
+    }
+
+    ClassDeclaration(kataType);
 }
 
 static void FunctionDeclaration() {
@@ -2141,6 +2278,7 @@ static void EntryDeclaration() {
     uint32_t global = ParseVariable("Expected shiki name");
     MarkInitialized();
     current->parsedEntryPoint = true;
+    current->entryPoint = parser.previous;
     CompilerFunction(TYPE_ENTRY, false);
     DefineVariable(global);
 }
@@ -2830,6 +2968,7 @@ static void StatementTry() {
     CompilerPatchJump(overCatchJump);
 
     currentTry = tryContext.enclosing;
+    printf("currentTry = tryContext.enclosing: %p\n", currentTry);
 
     if (Match(TOKEN_FINALLY)) {
         CompilerPatchJump(beginFinallyOffset);
@@ -2887,6 +3026,10 @@ static void CompilerSynchronize() {
             case TOKEN_VAR:
             case TOKEN_CONST:
             case TOKEN_FINAL:
+            case TOKEN_ABSTRACT:
+            case TOKEN_INTERFACE:
+            case TOKEN_SEALED:
+            case TOKEN_EXTENSION:
             case TOKEN_IMPORT:
             case TOKEN_USING:
 
@@ -2919,7 +3062,7 @@ static void CompilerSynchronize() {
 
 static void CompilerDeclaration() {
     if (Match(TOKEN_CLASS))
-        ClassDeclaration();
+        ClassDeclaration(0);
     else if (Match(TOKEN_FUNCTION))
         FunctionDeclaration();
     else if (Match(TOKEN_ENTRY))
@@ -2928,6 +3071,8 @@ static void CompilerDeclaration() {
         ConstDeclaration();
     else if (Match(TOKEN_FINAL))
         FinalDeclaration();
+    else if (Match(TOKEN_ABSTRACT) || Match(TOKEN_INTERFACE) || Match(TOKEN_SEALED) || Match(TOKEN_EXTENSION))
+        SpecialClassDeclaration();
     else if (Match(TOKEN_VAR))
         VariableDeclaration();
     else
@@ -3331,10 +3476,15 @@ static void CompilerSuper(bool canAssign) {
         KTN_Token superToken = SyntheticToken("sokata");
         uint32_t superName = IdentifierConstant(&superToken);
         NamedVariable(SyntheticToken("this"), false);
-        uint8_t argumentCount = ArgumentList();
+        uint16_t argumentCount = ArgumentList();
+
+        uint8_t positionalCount = (argumentCount >> 8) & 0xFF;
+        uint8_t namedCount = argumentCount & 0xFF;
+
         NamedVariable(superToken, false);
         CompilerEmitByteLong(OP_SUPER_INVOKE, superName);
-        CompilerEmitByte(argumentCount);
+        CompilerEmitByte(positionalCount);
+        CompilerEmitByte(namedCount);
         return;
     }
 
@@ -3344,10 +3494,15 @@ static void CompilerSuper(bool canAssign) {
 
     NamedVariable(SyntheticToken("this"), false);
     if (Match(TOKEN_PARENTHESIS_OPEN)) {
-        uint8_t argumentCount = ArgumentList();
+        uint16_t argumentCount = ArgumentList();
+
+        uint8_t positionalCount = (argumentCount >> 8) & 0xFF;
+        uint8_t namedCount = argumentCount & 0xFF;
+
         NamedVariable(SyntheticToken("sokata"), false);
         CompilerEmitByteLong(OP_SUPER_INVOKE, name);
-        CompilerEmitByte(argumentCount);
+        CompilerEmitByte(positionalCount);
+        CompilerEmitByte(namedCount);
         return;
     }
 
@@ -3543,6 +3698,7 @@ ParseRule rules[] = {
 static void CompilerParsePrecedence(Precedence precedence) {
     CompilerAdvance();
 
+    current->lastPrefixToken = parser.previous;
     ParseFn prefixRule = CompilerGetRule(parser.previous.type)->prefix;
 
     if (prefixRule == NULL) {
