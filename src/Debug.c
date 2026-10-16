@@ -415,7 +415,7 @@ int DisassembleInstruction(KTN_Chunk* chunk, int offset) {
             return lastOffset;
         }
         case OP_SUPER_INVOKE:
-            return InvokeInstructionLong("OP_SUPER_INVOKE", chunk, offset);
+            return InvokeInstructionLongShort("OP_SUPER_INVOKE", chunk, offset);
         case OP_CLOSURE: {
             offset++;
             uint32_t Constant = chunk->code[offset++] << 24;

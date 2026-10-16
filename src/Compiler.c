@@ -3484,6 +3484,7 @@ static void CompilerSuper(bool canAssign) {
         NamedVariable(superToken, false);
         CompilerEmitByteLong(OP_SUPER_INVOKE, superName);
         CompilerEmitByte(positionalCount);
+        CompilerEmitByte(namedCount);
         return;
     }
 
@@ -3493,10 +3494,15 @@ static void CompilerSuper(bool canAssign) {
 
     NamedVariable(SyntheticToken("this"), false);
     if (Match(TOKEN_PARENTHESIS_OPEN)) {
-        uint8_t argumentCount = ArgumentList();
+        uint16_t argumentCount = ArgumentList();
+
+        uint8_t positionalCount = (argumentCount >> 8) & 0xFF;
+        uint8_t namedCount = argumentCount & 0xFF;
+
         NamedVariable(SyntheticToken("sokata"), false);
         CompilerEmitByteLong(OP_SUPER_INVOKE, name);
-        CompilerEmitByte(argumentCount);
+        CompilerEmitByte(positionalCount);
+        CompilerEmitByte(namedCount);
         return;
     }
 

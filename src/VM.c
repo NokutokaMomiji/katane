@@ -3116,7 +3116,8 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
             }
             case OP_SUPER_INVOKE: {
                 KTN_ObjString* method = READ_STRING();
-                int argumentCount = READ_BYTE();
+                int positionalCount = READ_BYTE();
+                int namedCount = READ_BYTE();
                 KTN_ObjKata* sokata = AS_CLASS(Pop(vm));
 
                 if (strcmp(method->chars, "sokata") == 0) {
@@ -3125,7 +3126,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     }
 
                     int finalCount = 0;
-                    if (!CallValidate(vm, sokata->constructor, argumentCount, 0, &finalCount)) {
+                    if (!CallValidate(vm, sokata->constructor, positionalCount, namedCount, &finalCount)) {
                         if (vm->caughtException) {
                             vm->caughtException = false;
                             vm->currentFrame = &vm->frames[vm->frameCount - 1];
@@ -3134,7 +3135,7 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                         return RUNTIME_ERROR(NULL_VALUE);
                     }
 
-                    if (!Call(vm, AS_CLOSURE(sokata->constructor), argumentCount, sokata)) {
+                    if (!Call(vm, AS_CLOSURE(sokata->constructor), finalCount, sokata)) {
                         return RUNTIME_ERROR(NULL_VALUE);
                     }
 
@@ -3142,9 +3143,10 @@ static KTN_InterpretResult Run(KTN_VM* vm, int exitFrame) {
                     break;
                 }
 
-                if (!InvokeFromClass(vm, sokata, method, argumentCount, 0)) {
+                if (!InvokeFromClass(vm, sokata, method, positionalCount, namedCount)) {
                     return RUNTIME_ERROR(NULL_VALUE);
                 }
+                
                 vm->currentFrame = &vm->frames[vm->frameCount - 1];
                 break;
             }
